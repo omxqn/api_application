@@ -1,0 +1,151 @@
+GET / 
+
+res:
+        backgroundimg: "test.png",
+        logo: "logo.png",
+        img1: "test.png", title1: "Schedule Your Time", placetext1: "Plan Your journey based on your clock!",
+        img2: "test2.png", title2: "Plan Your Route", placetext2: "Set Your trip with ease using our reliable bus schedules.",
+        img3: "test3.png", title3: "Choose Language", placetext3: "Select Your Language",
+        languages: ["English", "Arabic"]
+
+-------------------------------------------
+
+
+GET /main
+Headers:
+Authorization: <token>
+for example:
+eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJJRCI6MSwiaWF0IjoxNzMwMTkwMjg3LCJleHAiOjE3MzAxOTM4ODd9.eu8UjJ32jBGbrnTjL70qkfRssAd6SYJRVO0K-xfxgPY 
+
+res:
+	background: "test.png",
+	placetext: "Welcome to my app",
+
+
+
+----------------------------------------------------
+
+
+POST /register
+
+Body:
+	username
+	email
+	phone_number
+	first_name
+	last_name
+res:
+
+'Username is required and cannot be empty.'
+'Invalid email format'
+'Invalid phone number format'
+'First name cannot be empty or only spaces.'
+'Last name cannot be empty or only spaces.'
+message:'User with this email or username already exists'
+message:'Database error'
+message:'Database error during registration'
+message:'Registration successful'
+message:'Error in sign up:'
+message:'Server error' 
+
+
+
+
+
+-------------------------------------------------------
+
+POST /login
+
+Body:
+	email
+	or
+	phone_number
+
+'Invalid email format'
+'Invalid phone number'
+message:'Please provide either email or phone number, but not both.'
+message:'Duplicate OTP has been found for ${user.email}' 
+message:'User not found'
+message:'Database error'
+message: 'Login successful. OTP has been sent to your email or phone.',
+ID: user.ID
+
+
+
+
+
+-------------------------------------------------------
+
+POST /validate-otp
+
+Body:
+	email
+	or
+	phone_number
+	
+	otp <4 Digits>
+
+
+'OTP is required'
+'OTP must be numeric'
+'Invalid phone number'
+'Invalid email format'
+message: 'Database error while retrieving user ID'
+
+message: 'No user associated with this contact information'
+message: 'Database error while retrieving OTP'
+message: 'OTP not found or expired'
+message: 'Invalid OTP'
+message: 'OTP has expired'
+ message: 'OTP validated successfully. You are now logged in.',
+
+
+
+
+// it returns auth <token> for the user
+sessionToken: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx,
+
+ID: user.ID
+
+-------------------------------------------------------------------------
+
+POST /register-bus
+
+Body:
+{
+"driver_id":<driver ID>,
+	"bus_number":<Bus umber>,
+	"board_symbol":<Bus plate symbol>,
+	"driving_license_number":<Bus plate>,
+	"bus_specification":<Bus type>,
+	"air_conditioner":<true of false>,
+	"image":"test.png"
+
+}
+
+
+
+
+"Driver ID must be an integer."
+"Bus Number must be an integer."
+"Board Symbol cannot be empty."
+"Driving License Number must be an integer."
+"Bus Specification cannot be empty."
+"Air Conditioner must be true or false."
+"Image cannot be empty."
+
+message: "Error registering bus information"
+
+message: "Bus registration successful"
+
+
+
+
+
+
+
+
+
+
+
+
