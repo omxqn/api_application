@@ -196,10 +196,11 @@ router.post('/trips/:tripId/stops', validateToken, async (req, res) => {
     }
 
     // Google Maps Geocoding API URL
-    const googleApiKey = 'YOUR_GOOGLE_MAPS_API_KEY';
+    const googleApiKey = 'AIzaSyBzN9xUNw3IX7dMeQNe1qESO4MHo8ktrDU';
     const googleUrl = `https://maps.googleapis.com/maps/api/geocode/json?place_id=${placeId}&key=${googleApiKey}`;
-
+    //const googleUrl = 'https://maps.googleapis.com/maps/api/js?key=${googleApiKey}&callback=initMap'
     try {
+        console.log(response.data)
         // Fetch location details from Google Maps API
         const response = await axios.get(googleUrl);
         if (response.data.status !== 'OK') {
