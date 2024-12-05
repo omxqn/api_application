@@ -190,7 +190,7 @@ router.post('/trips/:tripId/start-end-current', validateToken, async (req, res) 
 // POST /trips/:tripId/stops - Add stop points to a trip
 router.post('/trips/:tripId/stop-point', validateToken, async (req, res) => {
     const { tripId } = req.params;
-    const { longitude, latitude } = req.body; // longitude and latitude sent from the front end
+    const { long, lat } = req.body; // longitude and latitude sent from the front end
 
     if (!longitude || !latitude) {
         return res.status(400).json({ message: 'Longitude and Latitude are required' });
@@ -199,7 +199,7 @@ router.post('/trips/:tripId/stop-point', validateToken, async (req, res) => {
     try {
         // Validate that longitude and latitude are numbers
         const lng = parseFloat(longitude);
-        const lat = parseFloat(latitude);
+        const lats = parseFloat(lat);
 
         if (isNaN(lng) || isNaN(lat)) {
             return res.status(400).json({ message: 'Invalid longitude or latitude' });
@@ -208,7 +208,7 @@ router.post('/trips/:tripId/stop-point', validateToken, async (req, res) => {
         // Fetch location name using a reverse geocoding API
         const response = await axios.get(`https://nominatim.openstreetmap.org/reverse`, {
             params: {
-                lat,
+                lats,
                 lon: lng,
                 format: 'json'
             }
@@ -222,7 +222,7 @@ router.post('/trips/:tripId/stop-point', validateToken, async (req, res) => {
 
         // Insert the stop point into the trip_route table
         const query = 'INSERT INTO trip_route (trip_id, name, latitude, longitude) VALUES (?, ?, ?, ?)';
-        db.query(query, [tripId, locationName, lat, lng], (err, result) => {
+        db.query(query, [tripId, locationName, lats, lng], (err, result) => {
             if (err) {
                 return res.status(500).json({ message: 'Database error', error: err.sqlMessage });
             }
@@ -230,7 +230,7 @@ router.post('/trips/:tripId/stop-point', validateToken, async (req, res) => {
                 message: 'Stop point added successfully',
                 route_id: result.insertId,
                 name: locationName,
-                latitude: lat,
+                latitude: lats,
                 longitude: lng
             });
         });
