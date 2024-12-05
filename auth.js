@@ -266,22 +266,6 @@ const generateAndSaveOtp = (user, db, res) => {
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 // Route: Login API (Authenticate user and send OTP)
 router.post(
     "/login",

@@ -99,7 +99,6 @@ Example:
   "endAddress": "Al Maabilah, Muscat"
 }
 */
-
 // POST /trips/:tripId/start-end-current - Set start, end, and current locations for a trip using coordinates
 router.post('/trips/:tripId/start-end-current', validateToken, async (req, res) => {
     const { tripId } = req.params;
@@ -109,126 +108,137 @@ router.post('/trips/:tripId/start-end-current', validateToken, async (req, res) 
         return res.status(400).json({ message: 'Start, End, and Current locations are required' });
     }
 
-    // Extract latitude and longitude from input strings
-    const [startLng, startLat] = startLocation.split(',').map(coord => parseFloat(coord.trim()));
-    const [endLng, endLat] = endLocation.split(',').map(coord => parseFloat(coord.trim()));
-    const [currentLng, currentLat] = currentLocation.split(',').map(coord => parseFloat(coord.trim()));
-
-    const googleApiKey = 'AIzaSyBzN9xUNw3IX7dMeQNe1qESO4MHo8ktrDU'; // 'AIzaSyAOVYRIgupAurZup5y1PRh8Ismb1A3lLao';
+    // Extract latitude and longitude from input strings and merge into one variable
+    const startCoords = startLocation.split(',').map(coord => parseFloat(coord.trim()));
+    const endCoords = endLocation.split(',').map(coord => parseFloat(coord.trim()));
+    const currentCoords = currentLocation.split(',').map(coord => parseFloat(coord.trim()));
 
     try {
-        // Fetch start point address from Google Maps Geocoding API `https://maps.googleapis.com/maps/api/geocode/json`
-        const startResponse = await axios.get(`https://maps.googleapis.com/maps/api/geocode/json`, {
+        // Fetch start point address from OpenStreetMap Nominatim API
+        const startResponse = await axios.get(`https://nominatim.openstreetmap.org/reverse`, {
             params: {
-                latlng: `${startLat},${startLng}`,
-                key: googleApiKey
+                lat: startCoords[1],
+                lon: startCoords[0],
+                format: 'json'
             }
         });
 
-        // Fetch end point address from Google Maps Geocoding API
-        const endResponse = await axios.get(`https://maps.googleapis.com/maps/api/geocode/json`, {
+        // Fetch end point address from OpenStreetMap Nominatim API
+        const endResponse = await axios.get(`https://nominatim.openstreetmap.org/reverse`, {
             params: {
-                latlng: `${endLat},${endLng}`,
-                key: googleApiKey
+                lat: endCoords[1],
+                lon: endCoords[0],
+                format: 'json'
             }
         });
 
-        // Fetch current point address from Google Maps Geocoding API
-        const currentResponse = await axios.get(`https://maps.googleapis.com/maps/api/geocode/json`, {
+        // Fetch current point address from OpenStreetMap Nominatim API
+        const currentResponse = await axios.get(`https://nominatim.openstreetmap.org/reverse`, {
             params: {
-                latlng: `${currentLat},${currentLng}`,
-                key: googleApiKey
+                lat: currentCoords[1],
+                lon: currentCoords[0],
+                format: 'json'
             }
         });
-        
-        console.log(startResponse.data,startResponse.data.status)
+
         // Check if all geocoding requests were successful
-        if (startResponse.data.status !== 'OK' || endResponse.data.status !== 'OK' || currentResponse.data.status !== 'OK') {
-            return res.status(400).json({ message: 'Unable to fetch location details from Google Maps API' });
+        if (!startResponse.data || !endResponse.data || !currentResponse.data) {
+            return res.status(400).json({ message: 'Unable to fetch location details from OpenStreetMap API' });
         }
-        
-        // Extract relevant information for start, end, and current locations
-        const startAddress = startResponse.data.results[0].formatted_address;
-        const endAddress = endResponse.data.results[0].formatted_address;
-        const currentAddress = currentResponse.data.results[0].formatted_address;
 
-        // Insert the start, end, and current points into the database
+        // Extract relevant information for start, end, and current locations
+        const startAddress = startResponse.data.display_name || 'Unknown Address';
+        const endAddress = endResponse.data.display_name || 'Unknown Address';
+        const currentAddress = currentResponse.data.display_name || 'Unknown Address';
+
+        // Merge latitude and longitude into single variables for each location
+        const startLatLng = `${startCoords[1]},${startCoords[0]}`;
+        const endLatLng = `${endCoords[1]},${endCoords[0]}`;
+        const currentLatLng = `${currentCoords[1]},${currentCoords[0]}`;
+
+        // Update the database with the location names and merged coordinates
         const query = `
             UPDATE trip_details
-            SET start_location = ?, start_latitude = ?, start_longitude = ?, 
-                end_location = ?, end_latitude = ?, end_longitude = ?,
-                current_location = ?, current_latitude = ?, current_longitude = ?
+            SET 
+                Start_name = ?, Start_Location = ?, 
+                End_name = ?, End_Location = ?, 
+                Current_name = ?, Current_Location = ?
             WHERE ID = ?
         `;
         db.query(
             query,
             [
-                startAddress, startLat, startLng,
-                endAddress, endLat, endLng,
-                currentAddress, currentLat, currentLng,
+                startAddress, startLatLng,
+                endAddress, endLatLng,
+                currentAddress, currentLatLng,
                 tripId
             ],
             (err, result) => {
                 if (err) {
                     return res.status(500).json({ message: 'Database error', error: err.sqlMessage });
                 }
-                res.status(200).json({ message: 'Start, end, and current locations added successfully' });
+                res.status(200).json({ message: 'Start, end, and current locations added successfully', data: result });
             }
         );
     } catch (error) {
-        console.error('Google Maps API Error:', error.message);
-        res.status(500).json({ message: 'Google Maps API error', error: error.message });
+        console.error('OpenStreetMap API Error:', error.message);
+        res.status(500).json({ message: 'OpenStreetMap API error', error: error.message });
     }
 });
 
-module.exports = router;
-
-
-
 
 // POST /trips/:tripId/stops - Add stop points to a trip
-router.post('/trips/:tripId/stops', validateToken, async (req, res) => {
+router.post('/trips/:tripId/stop-point', validateToken, async (req, res) => {
     const { tripId } = req.params;
-    const { placeId } = req.body; // placeId is sent from the front end after user selects a location on the map
+    const { longitude, latitude } = req.body; // longitude and latitude sent from the front end
 
-    if (!placeId) {
-        return res.status(400).json({ message: 'Place ID is required' });
+    if (!longitude || !latitude) {
+        return res.status(400).json({ message: 'Longitude and Latitude are required' });
     }
 
-    // Google Maps Geocoding API URL
-    const googleApiKey = 'AIzaSyBzN9xUNw3IX7dMeQNe1qESO4MHo8ktrDU';
-    const googleUrl = `https://maps.googleapis.com/maps/api/geocode/json?place_id=${placeId}&key=${googleApiKey}`;
-    //const googleUrl = 'https://maps.googleapis.com/maps/api/js?key=${googleApiKey}&callback=initMap'
     try {
-        console.log(response.data)
-        // Fetch location details from Google Maps API
-        const response = await axios.get(googleUrl);
-        if (response.data.status !== 'OK') {
-            return res.status(400).json({ message: 'Unable to fetch location details', error: response.data.status });
+        // Validate that longitude and latitude are numbers
+        const lng = parseFloat(longitude);
+        const lat = parseFloat(latitude);
+
+        if (isNaN(lng) || isNaN(lat)) {
+            return res.status(400).json({ message: 'Invalid longitude or latitude' });
         }
 
-        const locationData = response.data.results[0];
-        const { formatted_address, geometry } = locationData;
-        const { lat, lng } = geometry.location;
+        // Fetch location name using a reverse geocoding API
+        const response = await axios.get(`https://nominatim.openstreetmap.org/reverse`, {
+            params: {
+                lat,
+                lon: lng,
+                format: 'json'
+            }
+        });
 
-        // Insert the stop point into the database
-        const query = 'INSERT INTO stop_points (trip_id, name, latitude, longitude) VALUES (?, ?, ?, ?)';
-        db.query(query, [tripId, formatted_address, lat, lng], (err, result) => {
+        if (!response.data || !response.data.display_name) {
+            return res.status(400).json({ message: 'Unable to fetch location details from reverse geocoding API' });
+        }
+
+        const locationName = response.data.display_name;
+
+        // Insert the stop point into the trip_route table
+        const query = 'INSERT INTO trip_route (trip_id, name, latitude, longitude) VALUES (?, ?, ?, ?)';
+        db.query(query, [tripId, locationName, lat, lng], (err, result) => {
             if (err) {
                 return res.status(500).json({ message: 'Database error', error: err.sqlMessage });
             }
             res.status(201).json({
                 message: 'Stop point added successfully',
-                stop_point_id: result.insertId,
+                route_id: result.insertId,
+                name: locationName,
+                latitude: lat,
+                longitude: lng
             });
         });
     } catch (error) {
-        console.error('Google Maps API Error:', error.message);
-        res.status(500).json({ message: 'Google Maps API error', error: error.message });
+        console.error('Error:', error.message);
+        res.status(500).json({ message: 'Internal server error', error: error.message });
     }
 });
-
-
 
 
 module.exports = router;

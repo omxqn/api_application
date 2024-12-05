@@ -9,7 +9,7 @@ function validateToken(req, res, next) {
     if (!token) {
         return res.status(401).json({ message: 'Access denied. No token provided.' });
     }
-
+   
     // Verify the token
     jwt.verify(token, SECRET_KEY, (err, decoded) => {
         if (err) {
