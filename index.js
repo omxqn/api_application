@@ -2,7 +2,8 @@ const express = require('express');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const cors = require('cors');
-
+const cron = require('node-cron');
+const axios = require('axios');
 const { body, validationResult } = require('express-validator');
 const { v4: uuidv4 } = require('uuid'); // For generating random UUIDs
 const jwt = require('jsonwebtoken');
@@ -33,6 +34,21 @@ app.use((err, req, res, next) => {
 
 
 app.listen(PORT, () => console.log(`Server is running on https://localhost:${PORT}`));
+
+
+
+
+// Updating bus location every 10 seconds
+cron.schedule('*/10 * * * * *', async () => {
+    try {
+        const response = await axios.post(`http://localhost:${PORT}/trips/update-locations`);
+        console.log('Bus locations updated:', response.data.message);
+    } catch (error) {
+        console.error('Error updating bus locations:', error.message);
+    }
+});
+
+
 
 // Route: GET /main
 app.get("/main", validateToken,(req, res) => {

@@ -5,15 +5,18 @@ const validateToken = require('./validateToken'); // Import the validation middl
 const axios = require('axios');
 
 const router = express.Router();
-// GET /trips/previous/:driverId - Fetch previous trips for a driver
+// GET /trips/previous/:driverId - Fetch previous trips for a driver with bus information
 router.get('/trips/previous/:driverId', validateToken, (req, res) => {
     const { driverId } = req.params;
     const currentTime = new Date().toISOString().slice(0, 19).replace('T', ' ');
-    
+
     const query = `
-        SELECT * FROM trip_details 
-        WHERE Driver_ID = ? AND CONCAT(Trip_Date, ' ', End_Time) < ?
-        ORDER BY Trip_Date DESC, End_Time DESC
+        SELECT td.*, bi.ID AS Bus_ID, bi.Bus_Number, bi.Board_Symbol, bi.Driving_License_number, bi.passangers, bi.capacity,
+               bi.Bus_Specification, bi.Air_Conditioner, bi.Image
+        FROM trip_details td
+        LEFT JOIN bus_information bi ON td.Bus_ID = bi.ID
+        WHERE td.Driver_ID = ? AND CONCAT(td.Trip_Date, ' ', td.End_Time) < ?
+        ORDER BY td.Trip_Date DESC, td.End_Time DESC
     `;
 
     db.query(query, [driverId, currentTime], (err, result) => {
@@ -24,15 +27,18 @@ router.get('/trips/previous/:driverId', validateToken, (req, res) => {
     });
 });
 
-// GET /trips/next/:driverId - Fetch next trips for a driver
+// GET /trips/next/:driverId - Fetch next trips for a driver with bus information
 router.get('/trips/next/:driverId', validateToken, (req, res) => {
     const { driverId } = req.params;
     const currentTime = new Date().toISOString().slice(0, 19).replace('T', ' ');
 
     const query = `
-        SELECT * FROM trip_details 
-        WHERE Driver_ID = ? AND CONCAT(Trip_Date, ' ', Start_Time) >= ?
-        ORDER BY Trip_Date ASC, Start_Time ASC
+        SELECT td.*, bi.ID AS Bus_ID, bi.Bus_Number, bi.Board_Symbol, bi.Driving_License_number, bi.passangers, bi.capacity,
+               bi.Bus_Specification, bi.Air_Conditioner, bi.Image
+        FROM trip_details td
+        LEFT JOIN bus_information bi ON td.Bus_ID = bi.ID
+        WHERE td.Driver_ID = ? AND CONCAT(td.Trip_Date, ' ', td.Start_Time) >= ?
+        ORDER BY td.Trip_Date ASC, td.Start_Time ASC
     `;
 
     db.query(query, [driverId, currentTime], (err, result) => {
@@ -42,19 +48,50 @@ router.get('/trips/next/:driverId', validateToken, (req, res) => {
         res.status(200).json({ nextTrips: result });
     });
 });
-router.get('/trips/:tripId/stops', validateToken, (req, res) => {
+
+
+
+// GET /trips/:tripId/details - Fetch trip details including stops and bus information
+router.get('/trips/:tripId/details', validateToken, (req, res) => {
     const { tripId } = req.params;
 
-    const query = 'SELECT * FROM stop_points WHERE trip_id = ?';
-    db.query(query, [tripId], (err, result) => {
+    const tripQuery = `
+        SELECT td.*, bi.ID AS Bus_ID, bi.Bus_Number, bi.Board_Symbol, bi.Driving_License_number, bi.passangers, bi.capacity,
+               bi.Bus_Specification, bi.Air_Conditioner, bi.Image
+        FROM trip_details td
+        LEFT JOIN bus_information bi ON td.Bus_ID = bi.ID
+        WHERE td.ID = ?
+    `;
+
+    const stopsQuery = `
+        SELECT ID, name, latitude, longitude 
+        FROM trip_route
+        WHERE trip_id = ?
+        ORDER BY ID ASC
+    `;
+
+    // Execute both queries
+    db.query(tripQuery, [tripId], (err, tripResult) => {
         if (err) {
             return res.status(500).json({ message: 'Database error', error: err.sqlMessage });
         }
-        res.status(200).json({ stops: result });
+
+        if (tripResult.length === 0) {
+            return res.status(404).json({ message: 'Trip not found' });
+        }
+
+        db.query(stopsQuery, [tripId], (err, stopsResult) => {
+            if (err) {
+                return res.status(500).json({ message: 'Database error', error: err.sqlMessage });
+            }
+
+            res.status(200).json({
+                tripDetails: tripResult[0],
+                stops: stopsResult
+            });
+        });
     });
 });
-
-
 
 // POST /trips - Create a new trip
 router.post(
@@ -86,6 +123,32 @@ router.post(
         });
     }
 );
+
+
+
+// POST /trips/:tripId/start - Start a trip
+router.post('/trips/:tripId/start', validateToken, (req, res) => {
+    const { tripId } = req.params;
+
+    const query = `
+        UPDATE trip_details
+        SET operation = 1, Start_Time = NOW()
+        WHERE ID = ? AND operation = 0
+    `;
+
+    db.query(query, [tripId], (err, result) => {
+        if (err) {
+            return res.status(500).json({ message: 'Database error', error: err.sqlMessage });
+        }
+
+        if (result.affectedRows === 0) {
+            return res.status(400).json({ message: 'Trip not found or already started' });
+        }
+
+        res.status(200).json({ message: 'Trip started successfully', tripId });
+    });
+});
+
 
 
 /*
@@ -239,6 +302,84 @@ router.post('/trips/:tripId/stop-point', validateToken, async (req, res) => {
         res.status(500).json({ message: 'Internal server error', error: error.message });
     }
 });
+
+
+
+
+// GET /trips/live - Fetch live location data for operating trips
+router.get('/trips/live', validateToken, (req, res) => {
+    const query = `
+        SELECT td.ID AS Trip_ID, td.Driver_ID, td.Start_Location, td.End_Location, 
+               td.Trip_Date, td.Start_Time, td.End_Time, td.operation, 
+               td.Current_Location, 
+               bi.Bus_Number, bi.Board_Symbol, bi.Driving_License_number, 
+               bi.Bus_Specification, bi.Air_Conditioner, bi.Image
+        FROM trip_details td
+        LEFT JOIN bus_information bi ON td.Bus_ID = bi.ID
+        WHERE td.operation = 1
+    `;
+
+    db.query(query, (err, result) => {
+        if (err) {
+            return res.status(500).json({ message: 'Database error', error: err.sqlMessage });
+        }
+
+        if (result.length === 0) {
+            return res.status(404).json({ message: 'No trips currently operating' });
+        }
+
+        res.status(200).json({
+            liveTrips: result
+        });
+    });
+});
+
+// POST /trips/update-locations - Update live locations of all operating trips with random locations
+router.post('/trips/update-locations', async (req, res) => {
+    try {
+        // Fetch all operating trips (operation = 1)
+        const fetchTripsQuery = `SELECT ID FROM trip_details WHERE operation = 1`;
+        
+        db.query(fetchTripsQuery, async (err, trips) => {
+            if (err) {
+                return res.status(500).json({ message: 'Database error while fetching trips', error: err.sqlMessage });
+            }
+
+            if (trips.length === 0) {
+                return res.status(404).json({ message: 'No operating trips found' });
+            }
+
+            // Generate random locations for each operating trip
+            const updatePromises = trips.map(({ ID: tripId }) => {
+                const latitude = (Math.random() * 180 - 90).toFixed(6); // Random latitude between -90 and 90
+                const longitude = (Math.random() * 360 - 180).toFixed(6); // Random longitude between -180 and 180
+                const currentLocation = `${latitude},${longitude}`;
+
+                const updateQuery = `
+                    UPDATE trip_details 
+                    SET Current_Location = ?, Last_Updated = NOW() 
+                    WHERE ID = ? AND operation = 1
+                `;
+
+                return new Promise((resolve, reject) => {
+                    db.query(updateQuery, [currentLocation, tripId], (err, result) => {
+                        if (err) reject(err);
+                        resolve(result);
+                    });
+                });
+            });
+
+            // Execute all updates
+            await Promise.all(updatePromises);
+
+            res.status(200).json({ message: 'All operating trip locations updated successfully with random locations' });
+        });
+    } catch (error) {
+        console.error('Error updating locations:', error);
+        res.status(500).json({ message: 'Failed to update locations', error: error.message });
+    }
+});
+
 
 
 module.exports = router;
