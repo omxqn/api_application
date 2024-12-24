@@ -26,7 +26,7 @@ res:
 ----------------------------------------------------
 
 
-POST /register
+POST /register/driver
 
 Body:
 	username
@@ -108,24 +108,134 @@ sessionToken: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx,
 ID: user.ID
 
 -------------------------------------------------------------------------
+POST /register/user
+Request Body:
+username: User's username
+email: User's email address
+phone_number: User's phone number
+first_name: User's first name
+last_name: User's last name
 
-POST /register-bus
+--------------------------------------------------------------------------
+POST /register/driver
+Request Body:
+username: Driver's username
+email: Driver's email address
+phone_number: Driver's phone number
+first_name: Driver's first name
+last_name: Driver's last name
 
-Body:
-{
-"driver_id":<driver ID>,
-	"bus_number":<Bus umber>,
-	"board_symbol":<Bus plate symbol>,
-	"driving_license_number":<Bus plate>,
-	"bus_specification":<Bus type>,
-	"air_conditioner":<true of false>,
-	"image":"test.png"
+-------------------------------------------------------------------------
+POST /register/bus
+Request Body:
 
-}
+driver_id: Driver's ID (integer)
+bus_number: Bus number (integer)
+board_symbol: Bus plate symbol
+driving_license_number: Driving license number (integer)
+bus_specification: Bus type or specification
+air_conditioner: Boolean value (true or false)
+image: Image URL or path (string)
+
+Headers:
+Authorization: JWT token (Bearer token)
+
+-------------------------------------------------------------------------
+POST /login
+Request Body:
+email (optional): User's email address
+phone_number (optional): User's phone number
+
+-------------------------------------------------------------------------
+POST /logout
+Headers:
+Authorization: JWT token (Bearer token)
 
 
+-------------------------------------------------------------------------
+POST /validate-otp
+Request Body:
+email (optional): User's email address
+phone_number (optional): User's phone number
+otp: 4-digit OTP
+-------------------------------------------------------------------------
 
 
+GET /trips/previous/:driverId
+Parameters:
+driverId: Driver's ID (URL parameter)
+Headers:
+
+Authorization: JWT token (Bearer token)
+-------------------------------------------------------------------------
+
+GET /trips/next/:driverId
+Parameters:
+driverId: Driver's ID (URL parameter)
+
+Headers:
+Authorization: JWT token (Bearer token)
+-------------------------------------------------------------------------
+GET /trips/:tripId/details
+Parameters:
+tripId: Trip's ID (URL parameter)
+
+Headers:
+Authorization: JWT token (Bearer token)
+-------------------------------------------------------------------------
+POST /trips/new
+Request Body:
+date: Trip date
+time: Trip time
+passenger_type: Type of passenger ('Male', 'Female', or 'Both')
+subscription_type: Type of subscription
+
+Headers:
+Authorization: JWT token (Bearer token)
+-------------------------------------------------------------------------
+POST /trips/:tripId/start
+Parameters:
+
+tripId: Trip's ID (URL parameter)
+Headers:
+Authorization: JWT token (Bearer token)
+-------------------------------------------------------------------------
+POST /trips/:tripId/start-end-current
+Parameters:
+tripId: Trip's ID (URL parameter)
+
+Request Body:
+
+startLocation: Starting location coordinates (latitude, longitude)
+endLocation: Ending location coordinates (latitude, longitude)
+currentLocation: Current location coordinates (latitude, longitude)
+
+Headers:
+Authorization: JWT token (Bearer token)
+
+-------------------------------------------------------------------------
+POST /trips/:tripId/stop-point
+Parameters:
+tripId: Trip's ID (URL parameter)
+
+Request Body:
+long: Longitude of the stop point
+lat: Latitude of the stop point
+Headers:
+Authorization: JWT token (Bearer token)
+
+-------------------------------------------------------------------------
+GET /trips/live
+Headers:
+Authorization: JWT token (Bearer token)
+-------------------------------------------------------------------------
+
+POST /trips/update-locations
+Request Body: None (The request updates live locations for all operating trips)
+Headers:
+Authorization: JWT token (Bearer token)
+
+-------------------------------------------------------------------------
 "Driver ID must be an integer."
 "Bus Number must be an integer."
 "Board Symbol cannot be empty."
@@ -137,15 +247,106 @@ Body:
 message: "Error registering bus information"
 
 message: "Bus registration successful"
+-------------------------------------------------------------------------
+
+GET /trips/previous/:driverId
+Parameters:
+driverId: Driver's ID (URL parameter)
+Headers:
+Authorization: JWT token (Bearer token)
+-------------------------------------------------------------------------
+GET /trips/next/:driverId
+Parameters:
+driverId: Driver's ID (URL parameter)
+Headers:
+Authorization: JWT token (Bearer token)
+
+GET /trips/:tripId/details
+Parameters:
+tripId: Trip's ID (URL parameter)
+Headers:
+Authorization: JWT token (Bearer token)
+-------------------------------------------------------------------------
+POST /trips/new
+Request Body:
+date: Trip date
+time: Trip time
+passenger_type: Type of passenger (either 'Male', 'Female', or 'Both')
+subscription_type: Type of subscription
+Headers:
+Authorization: JWT token (Bearer token)
+-------------------------------------------------------------------------
+POST /trips/:tripId/start
+Parameters:
+tripId: Trip's ID (URL parameter)
+Headers:
+Authorization: JWT token (Bearer token)
+-------------------------------------------------------------------------
+POST /trips/:tripId/start-end-current
+Parameters:
+tripId: Trip's ID (URL parameter)
+Request Body:
+startLocation: Starting location coordinates (latitude, longitude)
+endLocation: Ending location coordinates (latitude, longitude)
+currentLocation: Current location coordinates (latitude, longitude)
+Headers:
+Authorization: JWT token (Bearer token)
+-------------------------------------------------------------------------
+POST /trips/:tripId/stop-point
+Parameters:
+tripId: Trip's ID (URL parameter)
+Request Body:
+long: Longitude of the stop point
+lat: Latitude of the stop point
+Headers:
+Authorization: JWT token (Bearer token)
+-------------------------------------------------------------------------
+GET /trips/live
+Headers:
+Authorization: JWT token (Bearer token)
+POST /trips/update-locations
+Request Body: None (The request updates live locations for all operating trips)
+Headers:
+Authorization: JWT token (Bearer token)
 
 
 
 
+-------------------------------------------------------------------------
 
+POST /upload/passport
+Purpose: Upload a passport image for a driver.
 
+Request Body:
+email (optional): Driver's email address
+phone_number (optional): Driver's phone number
 
+File:
+passport: Passport file (image)
 
+Validation:
+Email or phone number is required, but not both.
 
+Response:
+Returns a success message with the file path if the passport is uploaded successfully.
+-------------------------------------------------------------------------
+POST /upload/idcard
+Purpose: Upload an ID card image for a driver.
+
+Request Body:
+
+email (optional): Driver's email address
+phone_number (optional): Driver's phone number
+
+File:
+idcard: ID card file (image)
+
+Validation:
+
+Email or phone number is required, but not both.
+
+Response:
+Returns a success message with the file path if the ID card is uploaded successfully.
 
 
 

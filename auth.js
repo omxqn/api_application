@@ -418,10 +418,13 @@ router.post(
                     // Generate a JWT token to use as a session ID
                     const sessionToken = jwt.sign({ ID:userID }, SECRET_KEY, { expiresIn: '4w' }); // Token expires in 1 hour
                     // Store the sessionToken in the `token` column in the `login` table
+                    console.log(userID,sessionToken);
                     const updateTokenQuery = `UPDATE login SET token = ? WHERE ID = ?`;
                     db.query(updateTokenQuery, [sessionToken, userID], (err) => {
                         if (err) {
+                            console.error('Error updating token in database:', err);
                             return res.status(500).json({ message: 'Error updating token in database', error: err.sqlMessage });
+                            
                         }
 
                         res.status(200).json({

@@ -13,6 +13,9 @@ const app = express();
 const PORT = 8888;
 const validateToken = require('./validateToken'); // Import the validation middleware
 const db = require('./database')
+const fs = require('fs');
+const path = require('path');
+
 
 app.use(express.json());
 app.use(helmet()); // Set security headers
@@ -51,10 +54,21 @@ cron.schedule('*/10 * * * * *', async () => {
 
 
 // Route: GET /main
-app.get("/main", validateToken,(req, res) => {
-    res.status(200).send({
-        background: "test.png",
-        placetext: "Welcome to my app",
+app.get("/main", validateToken, (req, res) => {
+    // Path to the image
+    const imagePath = path.join(__dirname, 'images', 'test.png');
+
+    // Read the image file and convert it to Base64
+    fs.readFile(imagePath, { encoding: 'base64' }, (err, data) => {
+        if (err) {
+            return res.status(500).json({ message: 'Error reading the image file', error: err });
+        }
+
+        // Return the image in Base64 format along with other data
+        res.status(200).send({
+            background: `data:image/png;base64,${data}`,
+            placetext: "Welcome to my app",
+        });
     });
 });
 
@@ -71,10 +85,8 @@ app.get("/", (req, res) => {
                 }
 
                 res.status(200).json(result);
-            });
-    
+            });    
 });
-
 
 // Load routes
 app.use('/', require('./trips'));

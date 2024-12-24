@@ -31,6 +31,7 @@ function validateToken(req, res, next) {
 
             // Token is valid and matches the database record
             req.user = decoded;
+            console.log(req.user);
             next();
         });
     });
