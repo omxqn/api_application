@@ -7,37 +7,51 @@ const validateToken = require('./validateToken'); // Import the validation middl
 const router = express.Router();
 const SECRET_KEY = process.env.SECRET_KEY;
 
-
 // User Registration API
 router.post(
-    "/register/user",
+    '/register/user',
     [
         body('username').notEmpty().trim().escape().withMessage('Username is required.'),
         body('email').isEmail().withMessage('Invalid email format').normalizeEmail(),
         body('phone_number').isMobilePhone().withMessage('Invalid phone number format'),
         body('first_name').notEmpty().trim().escape().withMessage('First name is required.'),
-        body('last_name').notEmpty().trim().escape().withMessage('Last name is required.')
+        body('last_name').notEmpty().trim().escape().withMessage('Last name is required.'),
     ],
     async (req, res) => {
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
             return res.status(400).json({ errors: errors.array() });
         }
+
         const { username, email, phone_number, first_name, last_name } = req.body;
 
-        const queryCheck = 'SELECT * FROM login WHERE Email = ? OR User_name = ?';
-        db.query(queryCheck, [email, username], (err, results) => {
-            if (err) return res.status(500).json({ message: 'Database error' });
-            if (results.length > 0) return res.status(400).json({ message: 'User already exists' });
+        try {
+            // Check if the user already exists
+            const queryCheck = 'SELECT * FROM login WHERE Email = ? OR User_name = ?';
+            const [results] = await db.query(queryCheck, [email, username]);
+            if (results.length > 0) {
+                return res.status(400).json({ message: 'User already exists' });
+            }
 
-            const queryInsert = 'INSERT INTO login (User_Name, Email, Phone_number) VALUES (?, ?, ?)';
-            db.query(queryInsert, [username, email, phone_number], (err, result) => {
-                if (err) return res.status(500).json({ message: 'Registration failed' });
-                res.status(201).json({ message: 'Registration successful', userId: result.insertId });
-            });
-        });
+            // Insert the new user
+            const queryInsert =
+                'INSERT INTO login (User_Name, Email, Phone_number, First_Name, Last_Name) VALUES (?, ?, ?, ?, ?)';
+            const [result] = await db.query(queryInsert, [
+                username,
+                email,
+                phone_number,
+                first_name,
+                last_name,
+            ]);
+
+            res.status(201).json({ message: 'Registration successful', userId: result.insertId });
+        } catch (err) {
+            console.error(err); // Log error for debugging purposes
+            res.status(500).json({ message: 'Internal server error' });
+        }
     }
 );
+
 
 
 
@@ -79,7 +93,7 @@ router.post(
                 // Step 1: Insert driver information first (if necessary)
                 const driverInsertQuery =  `INSERT INTO driver_information (First_Name, Last_Name, User_Name, Email, Phone_Number, 
                         Service_Type, Gender, ID_Card, Passport, Valid_ID, Valid_Passport)
-                    VALUES (?, ?, ?, ?, ?, "test", "test", "test", "test", False, False)`
+                    VALUES (?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, False, False)`
                 ;
                 
                 db.query(driverInsertQuery, [first_name, last_name, username, email, phone_number], (err, driverResult) => {

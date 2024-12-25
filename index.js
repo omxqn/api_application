@@ -54,7 +54,7 @@ cron.schedule('*/10 * * * * *', async () => {
 
 
 // Route: GET /main
-app.get("/main", validateToken, (req, res) => {
+app.get("/main", (req, res) => {
     // Path to the image
     const imagePath = path.join(__dirname, 'images', 'test.png');
 
