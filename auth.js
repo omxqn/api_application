@@ -34,47 +34,32 @@ router.post(
                 return res.status(400).json({ message: 'User already exists' });
             }
 
-            // Get the last available ID from driver_information table
-            const queryLastID = 'SELECT MAX(ID) AS lastID FROM driver_information';
-            db.query(queryLastID, (err, rows) => {
+            // Insert the new user with the incremented ID
+            const queryInsert = 'INSERT INTO login (User_Name, Email, Phone_number) VALUES (?, ?, ?, ?)';
+            db.query(queryInsert, [result.insertId, username, email, phone_number], (err, result) => {
                 if (err) {
-                    return res.status(500).json({ message: 'Database error while fetching last ID' });
+                    return res.status(500).json({ message: 'Registration failed' });
                 }
-
-                const lastID = rows[0]?.lastID || 0; // Default to 0 if no rows are found
-                const newID = lastID + 1;
-
-                // Insert the new user with the incremented ID
-                const queryInsert = 'INSERT INTO login (ID, User_Name, Email, Phone_number) VALUES (?, ?, ?, ?)';
-                db.query(queryInsert, [newID, username, email, phone_number], (err, result) => {
-                    if (err) {
-                        return res.status(500).json({ message: 'Registration failed' });
-                    }
-                    console.log([newID, username, email, phone_number], "Added to login");
-                    res.status(201).json({ message: 'Registration successful', userId: newID });
+                console.log([result.insertId, username, email, phone_number], "Added to login");
+                res.status(201).json({ message: 'Registration successful', userId: result.insertId });
         
                 });
-            });
+            
         });
     }
 );
 
 
 
-
-
-
-
-// POST Registration API (Sign-Up)
 router.post(
     "/register/driver",
     [
-        // Input validation and sanitization
         body('username').notEmpty().trim().escape().withMessage('Username is required and cannot be empty.'),
         body('email').isEmail().withMessage('Invalid email format').normalizeEmail(),
         body('phone_number').isMobilePhone().withMessage('Invalid phone number format'),
         body('first_name').notEmpty().trim().escape().withMessage('First name cannot be empty or only spaces.'),
         body('last_name').notEmpty().trim().escape().withMessage('Last name cannot be empty or only spaces.'),
+        body('ID').notEmpty().isInt().withMessage('ID number of logged in user has to be inputed'),
     ],
     async (req, res) => {
         const errors = validationResult(req);
@@ -82,82 +67,57 @@ router.post(
             return res.status(400).json({ errors: errors.array() });
         }
 
-        const { username, email, phone_number, first_name, last_name } = req.body;
+        const { username, email, phone_number, first_name, last_name, ID } = req.body;
+        console.log(ID);
 
         // Check if user already exists (by email or username) in the database
-        const queryCheck = 'SELECT * FROM login WHERE Email = ? OR User_name = ?';
-
-        db.query(queryCheck, [email, username], async (err, results) => {
+        const queryCheck = 'SELECT * FROM login WHERE (Email = ? OR User_name = ?) AND ID = ?';
+        db.query(queryCheck, [email, username, ID], async (err, results) => {
             if (err) {
                 return res.status(500).json({ message: 'Database error' });
             }
-
-            if (results.length > 0) {
-                return res.status(400).json({ message: 'User with this email or username already exists' });
+            console.log(results);
+            if (results.length <= 0) {
+                return res.status(400).json({ message: 'User with this email or username doesn\'t exist in login' });
             }
 
-            // Move the try block here
             try {
-                // Step 1: Insert driver information first (if necessary)
-                const driverInsertQuery =  `INSERT INTO driver_information (First_Name, Last_Name, User_Name, Email, Phone_Number, 
+                // Step 1: Insert driver information
+                const driverInsertQuery = `INSERT INTO driver_information (ID, First_Name, Last_Name, User_Name, Email, Phone_Number, 
                         Service_Type, Gender, ID_Card, Passport, Valid_ID, Valid_Passport)
-                    VALUES (?, ?, ?, ?, ?, NULL,NULL, NULL, NULL, NULL, False, False)`;
-                
+                    VALUES (?, ?, ?, ?, ?, ?, "NULL", "NULL", "NULL", "NULL", False, False)`;
 
-                db.query(driverInsertQuery, [first_name, last_name, username, email, phone_number], (err, driverResult) => {
+                db.query(driverInsertQuery, [ID, first_name, last_name, username, email, phone_number], (err, driverResult) => {
                     if (err) {
-                        return res.status(500).json({ message: 'Error inserting driver information', error: err.sqlMessage  });
+                        return res.status(500).json({ message: 'Error inserting driver information', error: err.sqlMessage });
                     }
-                    
-                    const driverId = driverResult.insertId; // Get the ID of the newly inserted driver
 
-                    // Insert the new user into the database
-                    const queryInsert = 
-                        `INSERT INTO login (ID, User_Name, Email, Phone_number)
-                        VALUES (?, ?, ?, ?)`;
+                    // Generate a JWT token to use as a session ID
+                    const sessionToken = jwt.sign({ ID: ID }, SECRET_KEY, { expiresIn: '4w' }); // Token expires in 4 weeks
 
-                    db.query(
-                        queryInsert,
-                        [driverId, username, email, phone_number],
-                        (err, result) => {
-                            if (err) {
-                                return res.status(500).json({ message: 'Database error during registration', error: err.sqlMessage });
-                            }
-                                
-                            db.query('SELECT ID FROM login WHERE Email = ?', [email], (err, results) => {
-                            if (err) {
-                                return res.status(500).json({ message: 'Database error while retrieving user ID' , error: err ? err.sqlMessage : 'Unknown error'});
-                            }
-
-                            if (results.length === 0) {
-                                return res.status(400).json({ message: 'No user associated with this contact information'});
-                            }
-
-                            const userID = results[0].ID;
-                            // Generate a JWT token to use as a session ID
-                    const sessionToken = jwt.sign({ ID:userID }, SECRET_KEY, { expiresIn: '4w' }); // Token expires in 1 hour
-                    // Store the sessionToken in the `token` column in the `login` table
+                    // Define `updateTokenQuery` here before using it
                     const updateTokenQuery = `UPDATE login SET token = ? WHERE ID = ?`;
-                    db.query(updateTokenQuery, [sessionToken, userID], (err) => {
+
+                    // Update the `token` column in the `login` table
+                    db.query(updateTokenQuery, [sessionToken, ID], (err) => {
                         if (err) {
-                            return res.status(500).json({ message: 'Error updating token in database', error: err.sqlMessage });
+                            console.log('Database error while updating token for user ID');
+                            return res.status(500).json({ message: 'Database error while updating token for user ID', error: err.sqlMessage });
                         }
 
+                        console.log("Token has been updated for ID:", ID, "Token:", sessionToken);
+
                         // Respond with success
-                            res.status(201).json({
-                                message: 'Registration successful',
-                                user: {
-                                    ID: userID,  // MySQL will return the inserted ID
-                                    username,
-                                    email,
-                                    sessionToken,
-                                    
-                                },});
+                        res.status(201).json({
+                            message: 'Registration successful',
+                            user: {
+                                ID: ID,
+                                username,
+                                email,
+                                sessionToken,
+                            },
                         });
-                                
-                            
-                            });
-                        });
+                    });
                 });
             } catch (error) {
                 console.error('Error in sign up:', error);
