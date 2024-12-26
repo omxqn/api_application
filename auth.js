@@ -35,8 +35,8 @@ router.post(
             }
 
             // Insert the new user with the incremented ID
-            const queryInsert = 'INSERT INTO login (User_Name, Email, Phone_number) VALUES (?, ?, ?, ?)';
-            db.query(queryInsert, [result.insertId, username, email, phone_number], (err, result) => {
+            const queryInsert = 'INSERT INTO login (User_Name, Email, Phone_number) VALUES (?, ?, ?)';
+            db.query(queryInsert, [ username, email, phone_number], (err, result) => {
                 if (err) {
                     return res.status(500).json({ message: 'Registration failed' });
                 }
