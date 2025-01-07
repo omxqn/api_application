@@ -128,13 +128,12 @@ router.post(
 );
 
 
-
 // POST Bus Information Registration API
-router
-    .post(
-    "/register/bus",validateToken,
+router.post(
+    "/register/bus", validateToken,
     [
         // Input validation and sanitization
+        body("owner_id").isInt().withMessage("Owner ID must be an integer."),
         body("driver_id").isInt().withMessage("Driver ID must be an integer."),
         body("bus_number").isInt().withMessage("Bus Number must be an integer."),
         body("board_symbol").notEmpty().trim().escape().withMessage("Board Symbol cannot be empty."),
@@ -148,9 +147,9 @@ router
         if (!errors.isEmpty()) {
             return res.status(400).json({ errors: errors.array() });
         }
-
         // Destructure fields from request body
         const {
+            owner_id,
             driver_id,
             bus_number,
             board_symbol,
@@ -159,31 +158,28 @@ router
             air_conditioner,
             image,
         } = req.body;
-
         // Insert bus information into the database
         const query = `
             INSERT INTO Bus_Information (
-                Driver_ID, Bus_Number, Board_Symbol, Driving_License_number,
-                Bus_Specification, Air_Conditioner, Image
+                Owner_ID, Driver_ID, Bus_Number, Board_Symbol,
+                Driving_License_number, Bus_Specification, Air_Conditioner, Image
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         `;
-
         db.query(
             query,
-            [driver_id, bus_number, board_symbol, driving_license_number, bus_specification, air_conditioner, image],
+            [owner_id, driver_id, bus_number, board_symbol, driving_license_number, bus_specification, air_conditioner, image],
             (err, result) => {
                 if (err) {
                     console.error("Database error:", err);
                     return res.status(500).json({ message: "Error registering bus information", error: err.sqlMessage });
                 }
-                generateAndSaveOtp(user, db, res);
-
                 // Respond with success and include bus info in response
                 res.status(201).json({
                     message: "Bus registration successful",
                     bus: {
                         id: result.insertId,
+                        owner_id,
                         driver_id,
                         bus_number,
                         board_symbol,
@@ -197,7 +193,6 @@ router
         );
     }
 );
-
 
 const generateAndSaveOtp = (user, db, res) => {
     // Generate a 4-digit OTP and set expiration
@@ -421,6 +416,70 @@ router.post(
         });
     }
 );
+
+// get profile
+router.get('/profile', validateToken, (req, res) => {
+    // Get the user's ID from the validated token (assuming validateToken sets req.user.ID)
+    const userId = req.user.ID;
+
+    // Get the current timestamp in milliseconds 
+    const time = Date.now(); // This is the current time in milliseconds
+    // Convert it to the 'YYYY-MM-DD' format
+    const today = new Date(time).toISOString().split('T')[0];  // 'YYYY-MM-DD'
+
+    // First query: Get buses for the owner
+    const getBuses = `SELECT * FROM bus_information WHERE owner_id = ?`;
+    db.query(getBuses, [userId], (err, buses) => {
+        if (err) {
+            return res.status(500).json({ message: 'Error fetching buses from database', error: err.sqlMessage });
+        }
+
+        // Second query: Get total captains (drivers) who work for this owner
+        const totalCaptains = `SELECT DISTINCT di.ID, di.First_Name, di.Last_Name, di.User_Name, di.Email, di.Phone_Number, di.Service_Type, di.Gender
+        FROM trip_details td
+        INNER JOIN bus_information bi ON td.Bus_ID = bi.ID
+        INNER JOIN driver_information di ON td.Driver_ID = di.ID
+        WHERE bi.owner_id = ?
+          AND td.Driver_ID != ?`;
+
+        db.query(totalCaptains, [userId, userId], (err, captains) => {
+            if (err) {
+                return res.status(500).json({ message: 'Error fetching captains from database', error: err.sqlMessage });
+            }
+
+            // Query to get today's trip count for the owner's buses
+            const countTripsToday = `
+                SELECT COUNT(*) AS trip_count
+                FROM trip_details td
+                INNER JOIN bus_information bi ON td.Bus_ID = bi.ID
+                WHERE bi.owner_id = ? AND td.Trip_Date = ?`;
+
+            db.query(countTripsToday, [userId, today], (err, result) => {
+                if (err) {
+                    return res.status(500).json({ message: 'Error fetching trip count from database', error: err.sqlMessage });
+                }
+
+                const travelsPerDay = result[0] ? result[0].trip_count : 0;
+
+                // Construct the response
+                res.status(200).json({
+                    Profile_Info: {
+                        Owner_Name: "my name", 
+                        Rating: 5, // Rating out of five
+                        Profile_Picture: "profile.jpg",
+                    },
+                    Total_Statistics: {
+                        Travels_Per_Day: travelsPerDay, // Use the actual count for today
+                        Total_Buses: buses.length,
+                        Total_Captains: captains.length,
+                    },
+                    Owend_Buses: buses.length > 0 ? buses : "No owned buses.", // Return the list or a message if empty
+                    My_Captains: captains.length > 0 ? captains : "No Captains."  // Return the list or a message if empty
+                });
+            });
+        });
+    });
+}); 
 
 
 module.exports = router;
