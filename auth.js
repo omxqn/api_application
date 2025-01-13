@@ -63,6 +63,7 @@ router.post(
     ],
     async (req, res) => {
         const errors = validationResult(req);
+        const step = 'completed_driver';
         if (!errors.isEmpty()) {
             return res.status(400).json({ errors: errors.array() });
         }
@@ -96,10 +97,10 @@ router.post(
                     const sessionToken = jwt.sign({ ID: ID }, SECRET_KEY, { expiresIn: '4w' }); // Token expires in 4 weeks
 
                     // Define `updateTokenQuery` here before using it
-                    const updateTokenQuery = `UPDATE login SET token = ? WHERE ID = ?`;
+                    const updateTokenQuery = `UPDATE login SET token = ?, register_step = ?  WHERE ID = ?`;
 
                     // Update the `token` column in the `login` table
-                    db.query(updateTokenQuery, [sessionToken, ID], (err) => {
+                    db.query(updateTokenQuery, [sessionToken,step, ID], (err) => {
                         if (err) {
                             console.log('Database error while updating token for user ID');
                             return res.status(500).json({ message: 'Database error while updating token for user ID', error: err.sqlMessage });
@@ -145,6 +146,7 @@ router.post(
     ],
     async (req, res) => {
         const errors = validationResult(req);
+        const step = 'completed_bus_owner';
         if (!errors.isEmpty()) {
             return res.status(400).json({ errors: errors.array() });
         }
@@ -178,10 +180,10 @@ router.post(
                     const sessionToken = jwt.sign({ ID: ID }, SECRET_KEY, { expiresIn: '4w' }); // Token expires in 4 weeks
 
                     // Define `updateTokenQuery` here before using it
-                    const updateTokenQuery = `UPDATE login SET token = ? WHERE ID = ?`;
+                    const updateTokenQuery = `UPDATE login SET token = ?, register_step = ?  WHERE ID = ?`;
 
                     // Update the `token` column in the `login` table
-                    db.query(updateTokenQuery, [sessionToken, ID], (err) => {
+                    db.query(updateTokenQuery, [sessionToken, step, ID], (err) => {
                         if (err) {
                             console.log('Database error while updating token for user ID');
                             return res.status(500).json({ message: 'Database error while updating token for user ID', error: err.sqlMessage });
@@ -411,8 +413,7 @@ router.post('/logout', validateToken, (req, res) => {
 // ID upload mechanisem
 
 
-
-// Route: OTP Validation API (Validate OTP)
+// OTP Validation Route
 router.post(
     "/validate-otp",
     [
@@ -431,77 +432,150 @@ router.post(
         // Step 1: Query the login table to retrieve the User_ID based on email or phone number
         let loginQuery, loginParams;
         if (email) {
-            loginQuery = 'SELECT ID FROM login WHERE Email = ?';
+            loginQuery = "SELECT ID, register_type FROM login WHERE Email = ?";
             loginParams = [email];
         } else {
-            loginQuery = 'SELECT ID FROM login WHERE Phone_Number = ?';
+            loginQuery = "SELECT ID, register_type FROM login WHERE Phone_Number = ?";
             loginParams = [phone_number];
         }
 
         db.query(loginQuery, loginParams, (err, results) => {
             if (err) {
-                return res.status(500).json({ message: 'Database error while retrieving user ID' , error: err ? err.sqlMessage : 'Unknown error'});
+                return res.status(500).json({ message: "Database error while retrieving user ID", error: err.sqlMessage });
             }
 
             if (results.length === 0) {
-                return res.status(400).json({ message: 'No user associated with this contact information'});
+                return res.status(400).json({ message: "No user associated with this contact information" });
             }
-            
 
-            const userID = results[0].ID;
+            const user = results[0];
 
             // Step 2: Query the otps table using the retrieved User_ID to validate the OTP
-            console.log(userID);
-            const otpQuery = 'SELECT * FROM otps WHERE User_ID = ?';
-            db.query(otpQuery, [userID], (err, otpResults) => {
+            const otpQuery = "SELECT * FROM otps WHERE User_ID = ?";
+            db.query(otpQuery, [user.ID], (err, otpResults) => {
                 if (err) {
-                    return res.status(500).json({ message: 'Database error while retrieving OTP' , error: err ? err.sqlMessage : 'Unknown error'});
+                    return res.status(500).json({ message: "Database error while retrieving OTP", error: err.sqlMessage });
                 }
 
                 if (otpResults.length === 0) {
-                    return res.status(400).json({ message: 'OTP not found or expired' });
+                    return res.status(400).json({ message: "OTP not found or expired" });
                 }
 
                 const otpEntry = otpResults[0];
 
                 // Check if the OTP is correct and not expired
                 if (otpEntry.otp != otp) {
-                    return res.status(400).json({ message: 'Invalid OTP' });
+                    return res.status(400).json({ message: "Invalid OTP" });
                 }
                 if (Date.now() > otpEntry.expires_at) {
-                    return res.status(400).json({ message: 'OTP has expired' });
+                    return res.status(400).json({ message: "OTP has expired" });
                 }
 
                 // OTP validation successful, delete the OTP from the database
-                const deleteOtpQuery = 'DELETE FROM otps WHERE User_ID = ?';
-                db.query(deleteOtpQuery, [userID], (err) => {
+                const deleteOtpQuery = "DELETE FROM otps WHERE User_ID = ?";
+                db.query(deleteOtpQuery, [user.ID], (err) => {
                     if (err) {
-                        return res.status(500).json({ message: 'Error deleting OTP' });
+                        return res.status(500).json({ message: "Error deleting OTP" });
                     }
+
                     // Generate a JWT token to use as a session ID
-                    const sessionToken = jwt.sign({ ID:userID }, SECRET_KEY, { expiresIn: '4w' }); // Token expires in 1 hour
+                    const sessionToken = jwt.sign({ ID: user.ID }, SECRET_KEY, { expiresIn: "4w" });
+
                     // Store the sessionToken in the `token` column in the `login` table
-                    console.log(userID,sessionToken);
-                    const updateTokenQuery = `UPDATE login SET token = ? WHERE ID = ?`;
-                    db.query(updateTokenQuery, [sessionToken, userID], (err) => {
+                    const updateTokenQuery = "UPDATE login SET token = ? WHERE ID = ?";
+                    db.query(updateTokenQuery, [sessionToken, user.ID], (err) => {
                         if (err) {
-                            console.error('Error updating token in database:', err);
-                            return res.status(500).json({ message: 'Error updating token in database', error: err.sqlMessage });
-                            
+                            return res.status(500).json({ message: "Error updating token in database", error: err.sqlMessage });
                         }
-
-                        res.status(200).json({
-                        message: 'OTP validated successfully. You are now logged in.',
-                        sessionToken, // Return the token as a session ID
-                        ID: userID,});
+                        console.log(user.register_type);
+                        // Check the `register_type` and fetch corresponding information
+                        if (user.register_type === "captain") {
+                            getDriverInformation(user.ID, (err, driverInfo) => {
+                                if (err) {
+                                    return res.status(500).json({ message: "Error retrieving driver information", error: err.sqlMessage });
+                                }
+                                return res.status(200).json({
+                                    message: "OTP validated successfully.",
+                                    user: {
+                                        ...user,
+                                        Valid_ID: driverInfo.Valid_ID,
+                                        Valid_Passport: driverInfo.Valid_Passport,
+                                    },
+                                    sessionToken,
+                                });
+                            });
+                        } else if (user.register_type === "bus_owner" || user.register_type === "both") {
+                            getOwnerInformation(user.ID, (err, ownerInfo) => {
+                                if (err) {
+                                    return res.status(500).json({ message: "Error retrieving owner information", error: err.sqlMessage });
+                                }
+                                return res.status(200).json({
+                                    message: "OTP validated successfully. 11",
+                                    user: {
+                                        ...user,
+                                        Valid_ID: ownerInfo.Valid_ID,
+                                        Valid_Passport: ownerInfo.Valid_Passport,
+                                    },
+                                    sessionToken,
+                                });
+                            });
+                        } else {
+                            return res.status(200).json({
+                                message: "OTP validated successfully. 22",
+                                user: {
+                                    ...user,
+                                    Valid_ID: "not_uploaded",
+                                    Valid_Passport: "not_uploaded",
+                                },
+                                sessionToken,
+                            });
+                        }
                     });
-
-                    
                 });
             });
         });
     }
 );
+
+
+
+
+function getDriverInformation(userId, callback) {
+    const query = "SELECT Valid_ID, Valid_Passport FROM driver_information WHERE ID = ?";
+    db.query(query, [userId], (err, results) => {
+        if (err) {
+            return callback(err, null);
+        }
+        console.log(results);
+        if (results.length === 0) {
+            return callback(null, { Valid_ID: "not_uploaded", Valid_Passport: "not_uploaded" });
+        }
+        const result = results[0];
+        callback(null, {
+            Valid_ID: result.Valid_ID === 1 ? "uploaded" : "not_uploaded",
+            Valid_Passport: result.Valid_Passport === 1 ? "uploaded" : "not_uploaded",
+        });
+    });
+}
+
+function getOwnerInformation(userId, callback) {
+    const query = "SELECT Valid_ID, Valid_Passport FROM owner_information WHERE ID = ?";
+    db.query(query, [userId], (err, results) => {
+        if (err) {
+            return callback(err, null);
+        }
+        console.log(results);
+        if (results.length === 0) {
+            return callback(null, { Valid_ID: "not_uploaded", Valid_Passport: "not_uploaded" });
+        }
+        const result = results[0];
+        callback(null, {
+            Valid_ID: result.Valid_ID === 1 ? "uploaded" : "not_uploaded",
+            Valid_Passport: result.Valid_Passport === 1 ? "uploaded" : "not_uploaded",
+        });
+    });
+}
+
 
 
 // Update register_type API
@@ -776,6 +850,214 @@ router.get('/profile', validateToken, (req, res) => {
     });
 });
 
+
+
+
+// register invitation 
+router.post(
+    "/register/invitation",
+    validateToken,
+    [
+      body("bus_id").isInt().withMessage("Bus ID must be an integer."),
+      body("invitee_id").isInt().withMessage("Invitee ID must be an integer."),
+    ],
+    (req, res) => {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+  
+      const { bus_id, invitee_id } = req.body;
+      const owner_id = req.user.ID;
+  
+      // Step 1: Check if the bus is owned by the owner
+      const checkBusQuery = `
+        SELECT Driver_ID, owner_id 
+        FROM bus_information 
+        WHERE ID = ? 
+      `;
+      db.query(checkBusQuery, [bus_id], (err, result) => {
+        if (err) {
+          console.error("Database error:", err);
+          return res.status(500).json({ message: "Error checking bus ownership", error: err.sqlMessage });
+        }
+  
+        if (result.length === 0) {
+          return res.status(404).json({ message: "Bus not found." });
+        }
+  
+        const bus = result[0];
+  
+        // Check if the bus is owned by the current owner
+        if (bus.owner_id !== owner_id) {
+          return res.status(403).json({ message: "You are not the owner of this bus." });
+        }
+  
+        // Step 2: Parse Driver_ID and ensure it's an array
+        let assignedDrivers = [];
+        try {
+          assignedDrivers = JSON.parse(bus.Driver_ID);
+          if (!Array.isArray(assignedDrivers)) {
+            assignedDrivers = [parseInt(assignedDrivers)];
+          }
+        } catch (error) {
+          assignedDrivers = [parseInt(bus.Driver_ID)];
+        }
+  
+        // Now check if the invitee_id is included in assignedDrivers
+        if (assignedDrivers.includes(invitee_id)) {
+          return res.status(400).json({ message: "This captain is already assigned to the bus." });
+        }
+  
+        // Step 3: Check if the invitee (captain) exists in the login table and has 'captain' as register_type
+        const checkCaptainQuery = `
+          SELECT 1 FROM login 
+          WHERE ID = ? AND register_type = 'captain'
+        `;
+        db.query(checkCaptainQuery, [invitee_id], (err, result) => {
+          if (err) {
+            console.error("Database error:", err);
+            return res.status(500).json({ message: "Error checking captain validity", error: err.sqlMessage });
+          }
+  
+          if (result.length === 0) {
+            return res.status(404).json({ message: "Invitee is not a valid captain." });
+          }
+  
+          // Step 4: Check if an invitation already exists with the same bus_id, owner_id, and invitee_id
+          const checkExistingInvitationQuery = `
+            SELECT 1 FROM pending_invitation
+            WHERE bus_id = ? AND owner_id = ? AND invitee_id = ? AND invite_status = 'pending'
+          `;
+          db.query(checkExistingInvitationQuery, [bus_id, owner_id, invitee_id], (err, result) => {
+            if (err) {
+              console.error("Database error:", err);
+              return res.status(500).json({ message: "Error checking for existing invitation", error: err.sqlMessage });
+            }
+  
+            if (result.length > 0) {
+              return res.status(400).json({ message: "An invitation for this captain is already pending for this bus." });
+            }
+  
+            // Step 5: Insert pending invitation into the database
+            const insertQuery = `
+              INSERT INTO pending_invitation (owner_id, bus_id, invitee_id, invite_status)
+              VALUES (?, ?, ?, 'pending')
+            `;
+            db.query(
+              insertQuery, 
+              [owner_id, bus_id, invitee_id],
+              (err, result) => {
+                if (err) {
+                  console.error("Database error:", err);
+                  return res.status(500).json({ message: "Error registering invitation", error: err.sqlMessage });
+                }
+  
+                // Respond with success
+                res.status(201).json({
+                  message: "Invitation sent successfully",
+                  invitation: {
+                    invitation_id: result.insertId,
+                    owner_id,
+                    bus_id,
+                    invitee_id,
+                    invite_status: 'pending',
+                  },
+                });
+              }
+            );
+          });
+        });
+      });
+    }
+  );
+
+  // Get all pending invitations to me
+  router.get("/invitations/pending", validateToken, (req, res) => {
+    const captain_id = req.user.ID; // Assuming `validateToken` middleware adds the user data to `req.user`
+
+    // Step 1: Fetch all pending invitations for the captain
+    const getPendingInvitationsQuery = `
+        SELECT pi.id AS invitation_id, pi.owner_id, pi.bus_id, pi.invitee_id, pi.invite_status, 
+               bi.Bus_Number, bi.Board_Symbol, bi.Bus_Specification, bi.capacity
+        FROM pending_invitation pi
+        JOIN bus_information bi ON pi.bus_id = bi.ID
+        WHERE pi.invitee_id = ? AND pi.invite_status = 'pending'
+    `;
+
+    db.query(getPendingInvitationsQuery, [captain_id], (err, results) => {
+        if (err) {
+            console.error("Database error:", err);
+            return res.status(500).json({ message: "Error fetching invitations", error: err.sqlMessage });
+        }
+
+        if (results.length === 0) {
+            return res.status(404).json({ message: "No pending invitations found." });
+        }
+
+        // Step 2: Return the invitations
+        res.status(200).json({
+            message: "Pending invitations retrieved successfully",
+            invitations: results,
+        });
+    });
+});
+
+// Reply to a pending invitation with acceptance or rejection.
+router.post("/invitation/reply", validateToken, [
+    // Input validation and sanitization
+    body("invitation_id").isInt().withMessage("Invitation ID must be an integer."),
+    body("reply").isIn(["accepted", "rejected"]).withMessage("Reply must be either 'accepted' or 'rejected'."),
+  ], (req, res) => {
+    const { invitation_id, reply } = req.body;
+    const captain_id = req.user.ID; // Assuming the `validateToken` middleware adds the user data to `req.user`
+  
+    // If the reply is not valid (not 'accepted' or 'rejected'), return an error
+    if (!['accepted', 'rejected'].includes(reply)) {
+      return res.status(400).json({ message: "Invalid reply. It must be either 'accepted' or 'rejected'." });
+    }
+  
+    // Step 1: Validate the invitation and check if it is still pending
+    const checkInvitationQuery = `
+      SELECT id, invite_status, invitee_id 
+      FROM pending_invitation 
+      WHERE id = ? AND invite_status = 'pending' AND invitee_id = ?
+    `;
+    
+    db.query(checkInvitationQuery, [invitation_id, captain_id], (err, result) => {
+      if (err) {
+        console.error("Database error:", err);
+        return res.status(500).json({ message: "Error checking invitation status", error: err.sqlMessage });
+      }
+  
+      if (result.length === 0) {
+        return res.status(404).json({ message: "Invitation not found or it is no longer pending." });
+      }
+  
+      // Step 2: Update the invitation status to 'accepted' or 'rejected'
+      const updateInvitationQuery = `
+        UPDATE pending_invitation
+        SET invite_status = ?
+        WHERE id = ?
+      `;
+      
+      db.query(updateInvitationQuery, [reply, invitation_id], (err, updateResult) => {
+        if (err) {
+          console.error("Database error:", err);
+          return res.status(500).json({ message: "Error updating invitation status", error: err.sqlMessage });
+        }
+  
+        // Step 3: Respond with a success message
+        res.status(200).json({
+          message: `Invitation ${reply} successfully.`,
+          invitation_id,
+          reply,
+        });
+      });
+    });
+  });
+  
+  
 
 
 
