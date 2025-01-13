@@ -6,6 +6,66 @@ require('dotenv').config();
 const validateToken = require('./validateToken'); // Import the validation middleware
 const router = express.Router();
 const SECRET_KEY = process.env.SECRET_KEY;
+const nodemailer = require("nodemailer");
+
+
+
+
+// Send Beautiful OTP Email
+async function sendBeautifulOTP(email, otp) {
+  // Create a transporter object with Zoho SMTP settings
+  const transporter = nodemailer.createTransport({
+    host: "smtp.zoho.com",
+    port: 465, // Use 587 for TLS
+    secure: true, // Use true for SSL, false for TLS
+    auth: {
+      user: "careers@sayyar.om", // Your Zoho email
+      pass: "gqy2gNh$", // Your Zoho email password
+    },
+  });
+
+  // Define the email content with a beautiful HTML design
+  const mailOptions = {
+    from: '"Sayyar OTP Service" <careers@sayyar.om>', // Sender address
+    to: email, // Recipient email address
+    subject: "Your One-Time Password (OTP)", // Email subject
+    html: `
+      <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #ddd; border-radius: 8px; padding: 20px; background-color: #f9f9f9;">
+        <h2 style="color: #51727b; text-align: center;">Your OTP Code</h2>
+        <p>Dear User,</p>
+        <p>We received a request to verify your email address for your Sayyar account. Use the OTP code below to complete the verification process:</p>
+        <div style="text-align: center; margin: 20px 0;">
+          <span style="font-size: 24px; font-weight: bold; color: #333; padding: 10px 20px; border: 2px dashed #51727b; display: inline-block; border-radius: 8px;">${otp}</span>
+        </div>
+        <p>If you did not request this, you can safely ignore this email.</p>
+        <p style="text-align: center; font-size: 14px; color: #777;">This OTP is valid for 10 minutes.</p>
+        <hr style="border: none; border-top: 1px solid #ddd; margin: 20px 0;" />
+        <p style="text-align: center; font-size: 12px; color: #999;">Sayyar Team | <a href="https://sayyar.om" style="color: #51727b; text-decoration: none;">www.sayyar.om</a></p>
+      </div>
+    `,
+  };
+
+      try {
+        // Send the email
+        const info = await transporter.sendMail(mailOptions);
+        console.log("OTP email sent successfully:", info.response);
+      } catch (error) {
+        console.error("Error sending OTP email:", error);
+        throw error;
+      }
+}
+
+
+
+
+
+
+
+
+
+
+
+
 
 router.post(
     '/register/user',
@@ -310,7 +370,14 @@ const generateAndSaveOtp = (user, db, res) => {
             if (err) {
                 return res.status(500).json({ message: 'Error saving OTP', error: err.sqlMessage });
             }
-
+            
+            
+            
+            sendBeautifulOTP(user.Email, otp)
+              .then(() => console.log("OTP Email Sent"))
+              .catch((error) => console.error("Failed to send OTP email:", error));
+            
+            
             // Log OTP for testing (send via SMS/Email in production)
             console.log(`Generated OTP: ${otp} for user: ${user.Email || user.Phone_number}`);
 
@@ -369,7 +436,13 @@ router.post(
 
             const user = result[0];
             console.log(user);
+            
+            
+            
+            
             generateAndSaveOtp(user, db, res);
+            
+
             
         });
     }
@@ -405,12 +478,6 @@ router.post('/logout', validateToken, (req, res) => {
 
 
 
-
-
-
-
-// passport upload mechanisem
-// ID upload mechanisem
 
 
 // OTP Validation Route
