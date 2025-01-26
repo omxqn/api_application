@@ -15,6 +15,14 @@ const validateToken = require('./validateToken'); // Import the validation middl
 const db = require('./database')
 const fs = require('fs');
 const path = require('path');
+const nodemailer = require("nodemailer");
+const timeout = require('connect-timeout');
+
+// Add timeout middleware
+app.use(timeout('1m')); // Set timeout to 3 minutes
+app.use((req, res, next) => {
+    if (!req.timedout) next();
+});
 
 
 app.use(express.json());
@@ -28,9 +36,123 @@ const limiter = rateLimit({
 });
 app.use(limiter);
 
+
+// Send Beautiful OTP Email
+async function sendBeautifulOTP(email, otp) {
+
+s// Create a transporter object with Zoho SMTP settings
+const transporter = nodemailer.createTransport({
+host: "smtp.zoho.com",
+port: 465, // Use 587 for TLS
+secure: true, // Use true for SSL, false for TLS
+auth: {
+  user: "careers@sayyar.om", // Your Zoho email
+  pass: "gqy2gNh$$", // Your Zoho email password
+},
+});
+
+  // Define the email content with a beautiful HTML design
+const mailOptions = {
+  from: '"Sayyar Service" <careers@sayyar.om>', // Sender address
+  to: email, // Recipient email address
+  subject: "Error with Sayyar Service", // Email subject
+  html: `
+    <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #ddd; border-radius: 8px; padding: 20px; background-color: #f9f9f9;">
+      <h2 style="color: #d9534f; text-align: center;">Service Error</h2>
+      <p>Dear User,</p>
+      <p>We encountered an error while processing your request. Our team has been notified, and we are working to resolve the issue as soon as possible.</p>
+      <p>If this issue persists, please contact our support team for further assistance.</p>
+      <hr style="border: none; border-top: 1px solid #ddd; margin: 20px 0;" />
+      <p style="text-align: center; font-size: 12px; color: #999;">Sayyar Team | <a href="https://sayyar.om" style="color: #51727b; text-decoration: none;">www.sayyar.om</a></p>
+    </div>
+  `,
+};
+
+
+      try {
+        // Send the email
+        const info = await transporter.sendMail(mailOptions);
+        console.log("OTP email sent successfully:", info.response);
+      } catch (error) {
+        console.error("Error sending OTP email:", error);
+        throw error;
+      }
+}
+
+
+// Route: POST /send-error-emails
+app.post("/send-error-emails", validateToken,(req, res) => {
+    const querySelect = "SELECT email FROM login";
+
+    db.query(querySelect, async (err, result) => {
+        if (err) {
+            return res.status(500).json({ message: "Database error during fetching emails", error: err.sqlMessage });
+        }
+
+        if (!result || result.length === 0) {
+            return res.status(404).json({ message: "No emails found in the login table" });
+        }
+
+        try {
+            // Extract emails into a single array
+            const emailList = result.map((user) => user.email).join(',');
+
+            // Create a transporter object with Zoho SMTP settings
+            const transporter = nodemailer.createTransport({
+                host: "smtp.zoho.com",
+                port: 465, // Use 587 for TLS
+                secure: true, // Use true for SSL, false for TLS
+                auth: {
+                    user: "careers@sayyar.om", // Your Zoho email
+                    pass: "gqy2gNh$$", // Your Zoho email password
+                },
+            });
+
+            // Combine all emails into one request
+            const mailOptions = {
+                from: '"Sayyar Service" <careers@sayyar.om>', // Sender address
+                bcc: emailList, // All recipient emails separated by commas
+                subject: "Service Error Notification", // Email subject
+                html: `
+                    <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #ddd; border-radius: 8px; padding: 20px; background-color: #f9f9f9;">
+                        <h2 style="color: #d9534f; text-align: center;">Service Error</h2>
+                        <p>Dear Users,</p>
+                        <p>We encountered an issue while processing your request. Our team is aware of the problem and is working to resolve it as quickly as possible.</p>
+                        <p>If you have any urgent concerns, please contact our support team at <a href="mailto:support@sayyar.om" style="color: #51727b;">support@sayyar.om</a>.</p>
+                        <hr style="border: none; border-top: 1px solid #ddd; margin: 20px 0;" />
+                        <p style="text-align: center; font-size: 12px; color: #999;">Sayyar Team | <a href="https://sayyar.om" style="color: #51727b; text-decoration: none;">www.sayyar.om</a></p>
+                    </div>
+                `,
+            };
+
+            // Send the email to all recipients
+            await transporter.sendMail(mailOptions);
+            console.log("Error emails sent successfully to all recipients!");
+
+            res.status(200).json({ message: "Error emails sent successfully!" });
+        } catch (emailError) {
+            console.error("Error sending emails:", emailError);
+            res.status(500).json({ message: "Failed to send error emails", error: emailError.message });
+        }
+    });
+});
+
+
+
+
+
+
+
+
 // Error handling middleware
 app.use((err, req, res, next) => {
     console.error(err.stack);
+    
+    sendBeautifulOTP("omxqn12@gmail.com", "Something wrong with server")
+              .then(() => console.log("Email ERROR Sent"))
+              .catch((error) => console.error("Something went wrong!", error));
+    
+    
     res.status(500).send('Something went wrong!');
 });
 

@@ -7,8 +7,64 @@ const validateToken = require('./validateToken'); // Import the validation middl
 const router = express.Router();
 const SECRET_KEY = process.env.SECRET_KEY;
 const nodemailer = require("nodemailer");
+const axios = require('axios');
 
 
+
+// Replace with your 360dialog API key
+const API_KEY = '5F9cmiCF0RNbxnSNSNa9tmWzAK';
+
+async function sendWhatsAppMessage(phoneNumber, otp) {
+    const url = 'https://waba-v2.360dialog.io/messages';
+    const verificationUrl="https://google.com"
+    otp = otp.toString().slice(0, 15);
+    const messageData = {
+        recipient_type: 'individual',
+        to: phoneNumber, // Recipient's phone number in E.164 format
+        messaging_product: 'whatsapp',
+        type: 'template',
+        template: {
+            name: 'otp', // Replace with your approved template name
+            language: { code: 'ar' }, // Replace with your approved language code
+            components: [
+                {
+                    type: 'body',
+                    parameters: [
+                        {
+                            type: 'text',
+                            text: otp , // Replace the placeholder {{1}} with the OTP
+                        },
+                    ],
+                },
+                {
+                    type: 'button',
+                    sub_type: 'url', // URL button
+                    index: 0,
+                    parameters: [
+                        {
+                            type: 'text',
+                            text: otp, // Replace the placeholder {{2}} with the URL
+                        },
+                    ],
+                },
+            ],
+        },
+    };
+
+    try {
+        const response = await axios.post(url, messageData, {
+            headers: {
+                'D360-API-KEY': API_KEY,
+                'Content-Type': 'application/json',
+            },
+        });
+        console.log(`Message sent successfully to ${phoneNumber}:`, response.data);
+        return response.data;
+    } catch (error) {
+        console.error(`Failed to send message to ${phoneNumber}:`, error.response?.data || error.message);
+        return null;
+    }
+}
 
 
 // Send Beautiful OTP Email
@@ -20,7 +76,7 @@ async function sendBeautifulOTP(email, otp) {
     secure: true, // Use true for SSL, false for TLS
     auth: {
       user: "careers@sayyar.om", // Your Zoho email
-      pass: "gqy2gNh$", // Your Zoho email password
+      pass: "gqy2gNh$$", // Your Zoho email password
     },
   });
 
@@ -54,15 +110,6 @@ async function sendBeautifulOTP(email, otp) {
         throw error;
       }
 }
-
-
-
-
-
-
-
-
-
 
 
 
@@ -108,9 +155,6 @@ router.post(
         });
     }
 );
-
-
-
 router.post(
     "/register/driver",
     [
@@ -119,7 +163,7 @@ router.post(
         body('phone_number').isMobilePhone().withMessage('Invalid phone number format'),
         body('first_name').notEmpty().trim().escape().withMessage('First name cannot be empty or only spaces.'),
         body('last_name').notEmpty().trim().escape().withMessage('Last name cannot be empty or only spaces.'),
-        body('ID').notEmpty().isInt().withMessage('ID number of logged in user has to be inputed'),
+        body('ID').notEmpty().isInt().withMessage('ID number of logged-in user has to be inputted'),
     ],
     async (req, res) => {
         const errors = validationResult(req);
@@ -131,21 +175,30 @@ router.post(
         const { username, email, phone_number, first_name, last_name, ID } = req.body;
         console.log(ID);
 
-        // Check if user already exists (by email or username) in the database
-        const queryCheck = 'SELECT * FROM login WHERE (Email = ? OR User_name = ?) AND ID = ?';
-        db.query(queryCheck, [email, username, ID], async (err, results) => {
+        // Check if email, username, or phone_number already exists in the database
+        const queryCheck = `
+            SELECT * 
+            FROM login 
+            WHERE (Email = ? OR User_name = ? OR Phone_Number = ?) AND ID = ?`;
+
+        db.query(queryCheck, [email, username, phone_number, ID], async (err, results) => {
             if (err) {
                 return res.status(500).json({ message: 'Database error' });
             }
-            console.log(results);
-            if (results.length <= 0) {
-                return res.status(400).json({ message: 'User with this email or username doesn\'t exist in login' });
+
+            // If any of the fields exist, return an error message
+            if (results.length > 0) {
+                return res.status(400).json({
+                    message: 'A user with this email, username, or phone number already exists',
+                });
             }
 
             try {
                 // Step 1: Insert driver information
-                const driverInsertQuery = `INSERT INTO driver_information (ID, First_Name, Last_Name, User_Name, Email, Phone_Number, 
-                        Service_Type, Gender, ID_Card, Passport, Valid_ID, Valid_Passport)
+                const driverInsertQuery = `
+                    INSERT INTO driver_information 
+                    (ID, First_Name, Last_Name, User_Name, Email, Phone_Number, 
+                     Service_Type, Gender, ID_Card, Passport, Valid_ID, Valid_Passport)
                     VALUES (?, ?, ?, ?, ?, ?, "NULL", "NULL", "NULL", "NULL", False, False)`;
 
                 db.query(driverInsertQuery, [ID, first_name, last_name, username, email, phone_number], (err, driverResult) => {
@@ -157,90 +210,10 @@ router.post(
                     const sessionToken = jwt.sign({ ID: ID }, SECRET_KEY, { expiresIn: '4w' }); // Token expires in 4 weeks
 
                     // Define `updateTokenQuery` here before using it
-                    const updateTokenQuery = `UPDATE login SET token = ?, register_step = ?  WHERE ID = ?`;
-
-                    // Update the `token` column in the `login` table
-                    db.query(updateTokenQuery, [sessionToken,step, ID], (err) => {
-                        if (err) {
-                            console.log('Database error while updating token for user ID');
-                            return res.status(500).json({ message: 'Database error while updating token for user ID', error: err.sqlMessage });
-                        }
-
-                        console.log("Token has been updated for ID:", ID, "Token:", sessionToken);
-
-                        // Respond with success
-                        res.status(201).json({
-                            message: 'Registration successful',
-                            user: {
-                                ID: ID,
-                                username,
-                                email,
-                                sessionToken,
-                            },
-                        });
-                    });
-                });
-            } catch (error) {
-                console.error('Error in sign up:', error);
-                res.status(500).send({ message: 'Server error' });
-            }
-        });
-    }
-);
-
-
-
-
-
-
-router.post(
-    "/register/bus_owner",
-    [
-        body('username').notEmpty().trim().escape().withMessage('Username is required and cannot be empty.'),
-        body('email').isEmail().withMessage('Invalid email format').normalizeEmail(),
-        body('phone_number').isMobilePhone().withMessage('Invalid phone number format'),
-        //body('company_id').notEmpty().isInt().withMessage('ID of company has to be inputed'),
-        body('first_name').notEmpty().trim().escape().withMessage('First name cannot be empty or only spaces.'),
-        body('last_name').notEmpty().trim().escape().withMessage('Last name cannot be empty or only spaces.'),
-        body('ID').notEmpty().isInt().withMessage('ID number of logged in user has to be inputed'),
-    ],
-    async (req, res) => {
-        const errors = validationResult(req);
-        const step = 'completed_bus_owner';
-        if (!errors.isEmpty()) {
-            return res.status(400).json({ errors: errors.array() });
-        }
-
-        const { username, email, phone_number, first_name, last_name, ID } = req.body;
-        console.log(ID);
-
-        // Check if user already exists (by email or username) in the database
-        const queryCheck = 'SELECT * FROM login WHERE (Email = ? OR User_name = ?) AND ID = ?';
-        db.query(queryCheck, [email, username, ID], async (err, results) => {
-            if (err) {
-                return res.status(500).json({ message: 'Database error' });
-            }
-            console.log(results);
-            if (results.length <= 0) {
-                return res.status(400).json({ message: 'User with this email or username doesn\'t exist in login' });
-            }
-
-            try {
-                // Step 1: Insert driver information
-                const driverInsertQuery = `INSERT INTO driver_information (ID, First_Name, Last_Name, User_Name, Email, Phone_Number, 
-                        Company_ID, Gender, ID_Card, Passport, Valid_ID, Valid_Passport)
-                    VALUES (?, ?, ?, ?, ?, ?, 0, "NULL", "NULL", "NULL", "NULL", False, False)`;
-
-                db.query(driverInsertQuery, [ID, first_name, last_name, username, email, phone_number], (err, driverResult) => {
-                    if (err) {
-                        return res.status(500).json({ message: 'Error inserting driver information', error: err.sqlMessage });
-                    }
-
-                    // Generate a JWT token to use as a session ID
-                    const sessionToken = jwt.sign({ ID: ID }, SECRET_KEY, { expiresIn: '4w' }); // Token expires in 4 weeks
-
-                    // Define `updateTokenQuery` here before using it
-                    const updateTokenQuery = `UPDATE login SET token = ?, register_step = ?  WHERE ID = ?`;
+                    const updateTokenQuery = `
+                        UPDATE login 
+                        SET token = ?, register_step = ?  
+                        WHERE ID = ?`;
 
                     // Update the `token` column in the `login` table
                     db.query(updateTokenQuery, [sessionToken, step, ID], (err) => {
@@ -271,7 +244,94 @@ router.post(
     }
 );
 
+router.post(
+    "/register/bus_owner",
+    [
+        body('username').notEmpty().trim().escape().withMessage('Username is required and cannot be empty.'),
+        body('email').isEmail().withMessage('Invalid email format').normalizeEmail(),
+        body('phone_number').isMobilePhone().withMessage('Invalid phone number format'),
+        body('first_name').notEmpty().trim().escape().withMessage('First name cannot be empty or only spaces.'),
+        body('last_name').notEmpty().trim().escape().withMessage('Last name cannot be empty or only spaces.'),
+        body('ID').notEmpty().isInt().withMessage('ID number of logged-in user has to be inputted'),
+    ],
+    async (req, res) => {
+        const errors = validationResult(req);
+        const step = 'completed_bus_owner';
+        if (!errors.isEmpty()) {
+            return res.status(400).json({ errors: errors.array() });
+        }
 
+        const { username, email, phone_number, first_name, last_name, ID } = req.body;
+        console.log(ID);
+
+        // Check if email, username, or phone_number already exists in the database
+        const queryCheck = `
+            SELECT * 
+            FROM login 
+            WHERE (Email = ? OR User_name = ? OR Phone_Number = ?) AND ID = ?`;
+
+        db.query(queryCheck, [email, username, phone_number, ID], async (err, results) => {
+            if (err) {
+                return res.status(500).json({ message: 'Database error' });
+            }
+
+            // If any of the fields exist, return an error message
+            if (results.length > 0) {
+                return res.status(400).json({
+                    message: 'A user with this email, username, or phone number already exists',
+                });
+            }
+
+            try {
+                // Step 1: Insert bus owner information
+                const busOwnerInsertQuery = `
+                    INSERT INTO driver_information 
+                    (ID, First_Name, Last_Name, User_Name, Email, Phone_Number, 
+                     Company_ID, Gender, ID_Card, Passport, Valid_ID, Valid_Passport)
+                    VALUES (?, ?, ?, ?, ?, ?, 0, "NULL", "NULL", "NULL", "NULL", False, False)`;
+
+                db.query(busOwnerInsertQuery, [ID, first_name, last_name, username, email, phone_number], (err, busOwnerResult) => {
+                    if (err) {
+                        return res.status(500).json({ message: 'Error inserting bus owner information', error: err.sqlMessage });
+                    }
+
+                    // Generate a JWT token to use as a session ID
+                    const sessionToken = jwt.sign({ ID: ID }, SECRET_KEY, { expiresIn: '4w' }); // Token expires in 4 weeks
+
+                    // Define `updateTokenQuery` here before using it
+                    const updateTokenQuery = `
+                        UPDATE login 
+                        SET token = ?, register_step = ?  
+                        WHERE ID = ?`;
+
+                    // Update the `token` column in the `login` table
+                    db.query(updateTokenQuery, [sessionToken, step, ID], (err) => {
+                        if (err) {
+                            console.log('Database error while updating token for user ID');
+                            return res.status(500).json({ message: 'Database error while updating token for user ID', error: err.sqlMessage });
+                        }
+
+                        console.log("Token has been updated for ID:", ID, "Token:", sessionToken);
+
+                        // Respond with success
+                        res.status(201).json({
+                            message: 'Registration successful',
+                            user: {
+                                ID: ID,
+                                username,
+                                email,
+                                sessionToken,
+                            },
+                        });
+                    });
+                });
+            } catch (error) {
+                console.error('Error in sign up:', error);
+                res.status(500).send({ message: 'Server error' });
+            }
+        });
+    }
+);
 
 
 
@@ -341,10 +401,14 @@ router.post(
         );
     }
 );
-
+    
+    
+    
 const generateAndSaveOtp = (user, db, res) => {
     // Generate a 4-digit OTP and set expiration
-    const otp = Math.floor(1000 + Math.random() * 9000);
+    
+    const otp = '1111'
+    //const otp = Math.floor(1000 + Math.random() * 9000);
     const expiresAt = Date.now() + 5 * 60 * 1000; // Expires in 5 minutes
 
     // Delete any existing OTP entry for the user
@@ -372,10 +436,24 @@ const generateAndSaveOtp = (user, db, res) => {
             }
             
             
-            
             sendBeautifulOTP(user.Email, otp)
               .then(() => console.log("OTP Email Sent"))
               .catch((error) => console.error("Failed to send OTP email:", error));
+            
+        
+            
+            const phoneNumber = user.Phone_Number;
+            phoneNumber == '+968'+ phoneNumber;
+          console.log(user.Phone_number,otp);
+            const result = sendWhatsAppMessage(phoneNumber, otp);
+
+            if (result) {
+                console.log('Message sent successfully:', result);
+            } else {
+                console.log('Failed to send message.');
+                return res.status(500).json({ message: 'Error saving OTP', error: err.sqlMessage });
+            }
+            
             
             
             // Log OTP for testing (send via SMS/Email in production)
@@ -391,11 +469,278 @@ const generateAndSaveOtp = (user, db, res) => {
 
 
 
+// POST /register/company route
+router.post(
+  "/register/company",
+  validateToken,  
+  [
+    body("company_name").isString().notEmpty().withMessage("Company name must be a string."),
+    body("contact_number").isInt().notEmpty().withMessage("Contact number must be an integer."),
+    body("record_number").isInt().notEmpty().withMessage("Record number must be an integer."),
+    body("commercial_register").notEmpty().isString().withMessage("Commercial register must be a string."),
+    body("operating_permit").notEmpty().isString().withMessage("Operating permit must be a string."),
+  ],
+  async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
 
+    const { company_name, contact_number, record_number, commercial_register, operating_permit } = req.body;
+    const owner_id = req.user.ID;  // Assuming `ID` is provided from the JWT token
+
+    try {
+      // Step 1: Check if the owner already has a company
+      const ownerResult = await dbQuery(
+        "SELECT Company_ID FROM owner_information WHERE ID = ?",
+        [owner_id]
+      );
+
+      if (ownerResult.length > 0 && ownerResult[0].Company_ID !== 0) {
+        return res.status(400).json({ message: "Owner already has a registered company." });
+      }
+
+      // Step 2: Insert the company data into the transportation_companies table
+      const companyResult = await dbQuery(
+        `INSERT INTO transportation_companies 
+          (company_name, contact_number, record_number, owner_id, commercial_register, operating_permit)
+          VALUES (?, ?, ?, ?, ?, ?)`,
+        [company_name, contact_number, record_number, owner_id, commercial_register, operating_permit]
+      );
+
+      const company_id = companyResult.insertId;  // The ID of the newly created company
+
+      // Step 3: Update the owner_information table with the new company_id
+      await dbQuery(
+        "UPDATE owner_information SET Company_ID = ? WHERE ID = ?",
+        [company_id, owner_id]
+      );
+
+      // Step 4: Return success response
+      return res.status(200).json({
+        message: "Company registered successfully.",
+        company_id,
+        company_name,
+        owner_id,
+      });
+
+    } catch (err) {
+      console.error("Database error:", err);
+      return res.status(500).json({ message: "Internal server error", error: err.message });
+    }
+  }
+);
 
 // -------------------------------------------------------------------------------------------
 
 
+
+// Helper function to wrap db queries into promises
+const dbQuery = (query, values) => {
+    return new Promise((resolve, reject) => {
+      db.query(query, values, (err, result) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(result);
+        }
+      });
+    });
+  };
+
+// POST /bus/add_driver route
+router.post(
+    "/bus/add_driver",
+    validateToken,
+    [
+      body("bus_id").isInt().withMessage("Bus ID must be an integer."),
+      body("driver_ids").isArray().withMessage("Driver IDs must be an array of integers."),
+      body("driver_ids.*").isInt().withMessage("Each driver ID must be an integer."),
+    ],
+    async (req, res) => {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+  
+      const { bus_id, driver_ids } = req.body;
+      const owner_id = req.user.ID;  // Get the owner ID from the JWT token
+  
+      try {
+        // Step 1: Check if the bus is owned by the owner
+        const busResult = await dbQuery(
+          `SELECT Driver_ID, owner_id FROM bus_information WHERE ID = ?`,
+          [bus_id]
+        );
+  
+        if (busResult.length === 0) {
+          return res.status(404).json({ message: "Bus not found." });
+        }
+  
+        const bus = busResult[0];
+  
+  
+        // Step 2: Parse Driver_ID from database and ensure it's an array
+        let currentDrivers = [];
+        try {
+          currentDrivers = JSON.parse(bus.Driver_ID);
+          if (!Array.isArray(currentDrivers)) {
+            currentDrivers = [parseInt(currentDrivers)];
+          }
+        } catch (error) {
+          currentDrivers = [parseInt(bus.Driver_ID)];
+        }
+  
+        // Step 3: Remove duplicates from the list of driver IDs (if any)
+        const uniqueDriverIds = [...new Set([...currentDrivers, ...driver_ids])];
+  
+        // Step 4: Validate each driver ID exists in the driver_information table
+        const invalidDriverIds = [];
+        for (const driverId of uniqueDriverIds) {
+          const driverResult = await dbQuery(
+            `SELECT ID FROM driver_information WHERE ID = ?`,
+            [driverId]
+          );
+  
+          if (driverResult.length === 0) {
+            invalidDriverIds.push(driverId);
+          }
+        }
+  
+        // If there are any invalid driver IDs, return a 400 error
+        if (invalidDriverIds.length > 0) {
+          return res.status(400).json({ message: `Invalid driver IDs: ${invalidDriverIds.join(', ')}` });
+        }
+  
+        // Step 5: Ensure the new driver list does not exceed the VARCHAR(255) limit
+        const driverListString = JSON.stringify(uniqueDriverIds);
+        if (driverListString.length > 255) {
+          return res.status(400).json({ message: "The list of drivers exceeds the 255 character limit." });
+        }
+  
+        // Step 6: Update the bus record with the new list of driver IDs
+        await dbQuery(
+          `UPDATE bus_information SET Driver_ID = ? WHERE ID = ?`,
+          [driverListString, bus_id]
+        );
+  
+        // Step 7: Return success response
+        return res.status(200).json({
+          message: "Drivers added successfully.",
+          bus_id,
+          updated_driver_ids: uniqueDriverIds,
+        });
+  
+      } catch (err) {
+        console.error("Database error:", err);
+        return res.status(500).json({ message: "Internal server error", error: err.message });
+      }
+    }
+  );
+
+
+// bus/remove_driver
+router.post(
+    "/bus/remove_driver",
+    validateToken,
+    [
+      body("bus_id").isInt().withMessage("Bus ID must be an integer."),
+      body("driver_ids").isArray().withMessage("Driver IDs must be an array of integers."),
+      body("driver_ids.*").isInt().withMessage("Each driver ID must be an integer."),
+    ],
+    async (req, res) => {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+  
+      const { bus_id, driver_ids } = req.body;
+      const owner_id = req.user.ID;  // Get the owner ID from the JWT token
+  
+      try {
+        // Step 1: Check if the bus is owned by the owner
+        const busResult = await dbQuery(
+          `SELECT Driver_ID, owner_id FROM bus_information WHERE ID = ?`,
+          [bus_id]
+        );
+  
+        if (busResult.length === 0) {
+          return res.status(404).json({ message: "Bus not found." });
+        }
+  
+        const bus = busResult[0];
+  
+  
+        // Step 2: Parse Driver_ID from the database and ensure it's an array
+        let currentDrivers = [];
+        try {
+          currentDrivers = JSON.parse(bus.Driver_ID);
+          if (!Array.isArray(currentDrivers)) {
+            currentDrivers = [parseInt(currentDrivers)];
+          }
+        } catch (error) {
+          currentDrivers = [parseInt(bus.Driver_ID)];
+        }
+  
+        // Step 3: Validate each driver ID exists in the driver_information table
+        const invalidDriverIds = [];
+        const nonAssignedDriverIds = [];
+  
+        // Check if each driver ID exists and is currently assigned to the bus
+        for (const driverId of driver_ids) {
+          const driverResult = await dbQuery(
+            `SELECT ID FROM driver_information WHERE ID = ?`,
+            [driverId]
+          );
+  
+          if (driverResult.length === 0) {
+            invalidDriverIds.push(driverId);
+          } else if (!currentDrivers.includes(driverId)) {
+            nonAssignedDriverIds.push(driverId);
+          }
+        }
+  
+        // Step 4: If there are any invalid driver IDs, return a 400 error
+        if (invalidDriverIds.length > 0) {
+          return res.status(400).json({ message: `Invalid driver IDs: ${invalidDriverIds.join(', ')}` });
+        }
+  
+        // If there are driver IDs that aren't assigned to the bus, return an error
+        if (nonAssignedDriverIds.length > 0) {
+          return res.status(400).json({ message: `Driver IDs not assigned to the bus: ${nonAssignedDriverIds.join(', ')}` });
+        }
+  
+        // Step 5: Remove the driver IDs from the bus's current driver list
+        const updatedDrivers = currentDrivers.filter(driverId => !driver_ids.includes(driverId));
+  
+        // Step 6: Ensure the new driver list does not exceed the VARCHAR(255) limit
+        const driverListString = JSON.stringify(updatedDrivers);
+        if (driverListString.length > 255) {
+          return res.status(400).json({ message: "The list of drivers exceeds the 255 character limit." });
+        }
+  
+        // Step 7: Update the bus record with the new list of driver IDs
+        await dbQuery(
+          `UPDATE bus_information SET Driver_ID = ? WHERE ID = ?`,
+          [driverListString, bus_id]
+        );
+  
+        // Step 8: Return success response
+        return res.status(200).json({
+          message: "Drivers removed successfully.",
+          bus_id,
+          updated_driver_ids: updatedDrivers,
+        });
+  
+      } catch (err) {
+        console.error("Database error:", err);
+        return res.status(500).json({ message: "Internal server error", error: err.message });
+      }
+    }
+  );
+
+
+// ----------------------------------------------------------------------------------------------------------------
 
 
 // Route: Login API (Authenticate user and send OTP)
@@ -436,13 +781,10 @@ router.post(
 
             const user = result[0];
             console.log(user);
-            
-            
-            
-            
+            //sendOTPwhatsapp(phone_number,3333);
             generateAndSaveOtp(user, db, res);
             
-
+            
             
         });
     }
