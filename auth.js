@@ -8,43 +8,33 @@ const router = express.Router();
 const SECRET_KEY = process.env.SECRET_KEY;
 const nodemailer = require("nodemailer");
 const axios = require('axios');
+const requireRole = require('./systemRoles'); 
 
 
 
-// Replace with your 360dialog API key
-const API_KEY = '5F9cmiCF0RNbxnSNSNa9tmWzAK';
+async function sendWhatsAppOtp(phoneNumber, otp, apiKey) {
+    const url = `https://graph.facebook.com/v21.0/527453130457868/messages`;
 
-async function sendWhatsAppMessage(phoneNumber, otp) {
-    const url = 'https://waba-v2.360dialog.io/messages';
-    const verificationUrl="https://google.com"
-    otp = otp.toString().slice(0, 15);
     const messageData = {
-        recipient_type: 'individual',
-        to: phoneNumber, // Recipient's phone number in E.164 format
         messaging_product: 'whatsapp',
+        to: phoneNumber, // Recipient's phone number in E.164 format (e.g., +1234567890)
         type: 'template',
         template: {
             name: 'otp', // Replace with your approved template name
-            language: { code: 'ar' }, // Replace with your approved language code
+            language: { code: 'ar' }, // Replace with the appropriate language code
             components: [
                 {
                     type: 'body',
                     parameters: [
-                        {
-                            type: 'text',
-                            text: otp , // Replace the placeholder {{1}} with the OTP
-                        },
+                        { type: 'text', text: otp.slice(0,5) }, // Replace {{1}} in the template                       
                     ],
                 },
                 {
                     type: 'button',
-                    sub_type: 'url', // URL button
+                    sub_type: 'url', // Change to 'url' if using a URL button
                     index: 0,
                     parameters: [
-                        {
-                            type: 'text',
-                            text: otp, // Replace the placeholder {{2}} with the URL
-                        },
+                        { type: 'text', text: otp.slice(0,5) }, // Replace {{1}} in the template
                     ],
                 },
             ],
@@ -54,19 +44,26 @@ async function sendWhatsAppMessage(phoneNumber, otp) {
     try {
         const response = await axios.post(url, messageData, {
             headers: {
-                'D360-API-KEY': API_KEY,
+                'Authorization': `Bearer ${apiKey}`,
                 'Content-Type': 'application/json',
             },
         });
+
         console.log(`Message sent successfully to ${phoneNumber}:`, response.data);
         return response.data;
     } catch (error) {
-        console.error(`Failed to send message to ${phoneNumber}:`, error.response?.data || error.message);
+        console.error(
+            `Failed to send message to ${phoneNumber}:`,
+            error.response?.data || error.message
+        );
         return null;
     }
 }
 
 
+
+            
+            
 // Send Beautiful OTP Email
 async function sendBeautifulOTP(email, otp) {
   // Create a transporter object with Zoho SMTP settings
@@ -404,71 +401,6 @@ router.post(
     
     
     
-const generateAndSaveOtp = (user, db, res) => {
-    // Generate a 4-digit OTP and set expiration
-    
-    const otp = '1111'
-    //const otp = Math.floor(1000 + Math.random() * 9000);
-    const expiresAt = Date.now() + 5 * 60 * 1000; // Expires in 5 minutes
-
-    // Delete any existing OTP entry for the user
-    const deleteOtpQuery = `DELETE FROM otps WHERE User_ID = ?`;
-
-    db.query(deleteOtpQuery, [user.ID], (err) => {
-        if (err) {
-            return res.status(500).json({ message: `Duplicate OTP has been found for ${user.email}` });
-        }
-
-        // Insert or update the OTP entry
-        const otpQuery = `
-            INSERT INTO otps (User_ID, expiresAt, otp)
-            VALUES (?, ?, ?)
-            ON DUPLICATE KEY UPDATE
-                User_ID = VALUES(User_ID),
-                expiresAt = VALUES(expiresAt),
-                otp = VALUES(otp)
-        `;
-
-        // Execute the query to save the OTP
-        db.query(otpQuery, [user.ID, expiresAt, otp], (err) => {
-            if (err) {
-                return res.status(500).json({ message: 'Error saving OTP', error: err.sqlMessage });
-            }
-            
-            
-            sendBeautifulOTP(user.Email, otp)
-              .then(() => console.log("OTP Email Sent"))
-              .catch((error) => console.error("Failed to send OTP email:", error));
-            
-        
-            
-            const phoneNumber = user.Phone_Number;
-            phoneNumber == '+968'+ phoneNumber;
-          console.log(user.Phone_number,otp);
-            const result = sendWhatsAppMessage(phoneNumber, otp);
-
-            if (result) {
-                console.log('Message sent successfully:', result);
-            } else {
-                console.log('Failed to send message.');
-                return res.status(500).json({ message: 'Error saving OTP', error: err.sqlMessage });
-            }
-            
-            
-            
-            // Log OTP for testing (send via SMS/Email in production)
-            console.log(`Generated OTP: ${otp} for user: ${user.Email || user.Phone_number}`);
-
-            res.status(200).json({
-                message: 'Login successful. OTP has been sent to your email or phone.',
-                ID: user.ID
-            });
-        });
-    });
-};
-
-
-
 // POST /register/company route
 router.post(
   "/register/company",
@@ -750,7 +682,8 @@ router.post(
         body('email').optional().isEmail().withMessage('Invalid email format').normalizeEmail(),
         body('phone_number').optional().isMobilePhone().withMessage('Invalid phone number'),
     ],
-    (req, res) => {
+    async (req, res) => {
+        var selection = "none";
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
             return res.status(400).json({ errors: errors.array() });
@@ -766,9 +699,11 @@ router.post(
         if (email) {
             query = 'SELECT * FROM login WHERE email = ?';
             params = [email];
+            selection = "email";
         } else {
             query = 'SELECT * FROM login WHERE phone_number = ?';
             params = [phone_number];
+            selection = "phone";
         }
 
         db.query(query, params, (err, result) => {
@@ -781,8 +716,8 @@ router.post(
 
             const user = result[0];
             console.log(user);
-            //sendOTPwhatsapp(phone_number,3333);
-            generateAndSaveOtp(user, db, res);
+            
+            generateAndSaveOtp(user, selection, db, res);
             
             
             
@@ -791,11 +726,105 @@ router.post(
 );
 
 
+const generateAndSaveOtp = (user, selection, db, res) => {
+    // Replace with your 360dialog API key
+    const API_KEY = 'EAANfFPMmiQoBOZCf1nZABiZCh24YucuoRzhQlDbp9Tnam9jMvZA9w4Mx14E6T4EnnfzTEnXSxeTo8Uomp4EbLah2GijyIXTB3qf547gDZBLVrZAjt3fk1kAKTVyq3kZByhY6TaNByG3hSrkclpsQiZBtCD4XbkwAFUHkgr3mpln9v1nx5yH1sZC0VVZC33JIOttY0YawZDZD';
+    
+     //const otp = Math.floor(1000 + Math.random() * 9000);
+    // Generate a 4-digit OTP and set expiration
+    const otp = '1111'; // Replace with random OTP logic if needed
+    const expiresAt = Date.now() + 5 * 60 * 1000; // Expires in 5 minutes
+
+    // Delete any existing OTP entry for the user
+    const deleteOtpQuery = `DELETE FROM otps WHERE User_ID = ?`;
+
+    db.query(deleteOtpQuery, [user.ID], (err) => {
+        if (err) {
+            console.error(`Error deleting old OTP for user ${user.Email || user.Phone_Number}:`, err);
+            return res.status(500).json({ message: 'Failed to delete old OTP' });
+        }
+        
+        // Insert or update the OTP entry
+        const otpQuery = `
+            INSERT INTO otps (User_ID, expiresAt, otp)
+            VALUES (?, ?, ?)
+            ON DUPLICATE KEY UPDATE
+                expiresAt = VALUES(expiresAt),
+                otp = VALUES(otp)
+        `;
+
+        db.query(otpQuery, [user.ID, expiresAt, otp], (err) => {
+            if (err) {
+                console.error(`Error saving OTP for user ${user.Email || user.Phone_Number}:`, err);
+                return res.status(500).json({ message: 'Error saving OTP', error: err.sqlMessage });
+            }
+
+            if (selection === 'phone') {
+                const phoneNumber = '+968' + user.Phone_Number;
+
+                // Send OTP via WhatsApp
+                sendWhatsAppOtp(phoneNumber, otp, API_KEY)
+                    .then((result) => {
+                        console.log('Message sent successfully via WhatsApp:', result);
 
 
+                            // Log OTP for testing (send via SMS/Email in production)
+                    console.log(`Generated OTP: ${otp} for user: ${user.Phone_Number}`);
+
+                    res.status(200).json({
+                        message: `Login successful. OTP sent successfully via WhatsApp to phone: ${phoneNumber}`,
+                        ID: user.ID
 
 
+                    });
 
+                    
+                    
+                    
+                    })
+                    .catch((error) => {
+                        console.error('Failed to send message via WhatsApp:', error);
+                        return res.status(500).json({
+                            message: 'Failed to send OTP via WhatsApp',
+                            error: error.message,
+                        });
+                    });
+            } else if (selection === 'email') {
+                // Send OTP via email
+                sendBeautifulOTP(user.Email, otp)
+                    .then(() => {
+                        console.log(`OTP Email Sent To: ${user.Email}`);
+                       
+                    
+                           // Log OTP for testing (send via SMS/Email in production)
+                        console.log(`Generated OTP: ${otp} for user: ${user.Email}`);
+
+                    
+                        res.status(200).json({
+                        message: `Login successful. OTP sent successfully to email: ${user.Email}`,
+                        ID: user.ID
+
+
+                    });
+
+                    })
+                    .catch((error) => {
+                        console.error('Failed to send OTP email:', error);
+                        return res.status(500).json({
+                            message: 'Failed to send OTP email',
+                            error: error.message,
+                        });
+                    });
+            } else {
+                console.error('Invalid selection for sending OTP.');
+                return res.status(400).json({ message: 'Invalid selection for sending OTP.' });
+            }
+        });
+    });
+};
+    
+    
+    
 
 // LOGOUT API 
 
@@ -985,7 +1014,82 @@ function getOwnerInformation(userId, callback) {
     });
 }
 
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    
+    
+    
+    
+    
+    
+    
+// Setting system role for users by super_admins
+router.post(
+  '/user/set_role',
+  validateToken,       // Step 1: JWT validation middleware
+  requireRole('super_admin'),
+  [
+    // Step 3: Validation for input fields
+    body('target_id')
+      .isInt().withMessage('Target user ID must be an integer.'),
+    body('role')
+      .isIn(['super_admin', 'admin', 'user'])
+      .withMessage('new_role must be one of these options: super_admin, admin, user')
+  ],
+  async (req, res) => {
+    // Step 4: If validation fails, return a 400 error with detailed messages
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ 
+        message: "Validation failed",
+        errors: errors.array().map(err => err.msg) 
+      });
+    }
 
+    // Step 5: Destructure the target user ID and the new role from the request body
+    const { target_id, role: new_role } = req.body;
+
+    try {
+      // Step 6: Check if the target user exists in the database
+      const targetUser = await dbQuery(
+        `SELECT ID FROM login WHERE ID = ?`,
+        [target_id]
+      );
+
+      // If the user is not found, return a 404 error
+      if (targetUser.length === 0) {
+        return res.status(404).json({ message: "Target user not found." });
+      }
+
+      // Step 7: Update the role of the target user in the database
+      await dbQuery(`UPDATE login SET system_role = ? WHERE ID = ?`, [new_role, target_id]);
+    
+      console.log("Role updated successfully.",
+        target_id,
+        new_role);
+        
+      // Step 8: Return a success response
+      return res.status(200).json({
+        message: "Role updated successfully.",
+        target_id,
+        new_role
+      });
+
+    } catch (err) {
+      // Step 9: Catch any database errors and return a 500 response
+      console.error("Database error:", err);
+      return res.status(500).json({ 
+        message: "Internal server error during role update", 
+        error: err.message 
+      });
+    }
+  }
+);
+
+
+    
+    
+    
+//******************************************************************************************************************
 
 // Update register_type API
 router.post(
