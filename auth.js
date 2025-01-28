@@ -728,7 +728,7 @@ router.post(
 
 const generateAndSaveOtp = (user, selection, db, res) => {
     // Replace with your 360dialog API key
-    const API_KEY = 'EAANfFPMmiQoBOZCf1nZABiZCh24YucuoRzhQlDbp9Tnam9jMvZA9w4Mx14E6T4EnnfzTEnXSxeTo8Uomp4EbLah2GijyIXTB3qf547gDZBLVrZAjt3fk1kAKTVyq3kZByhY6TaNByG3hSrkclpsQiZBtCD4XbkwAFUHkgr3mpln9v1nx5yH1sZC0VVZC33JIOttY0YawZDZD';
+    const API_KEY = 'APIKEY';
     
      //const otp = Math.floor(1000 + Math.random() * 9000);
     // Generate a 4-digit OTP and set expiration
